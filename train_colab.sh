@@ -24,8 +24,8 @@ python main.py \
     --train-annotation /content/drive/MyDrive/khoaluan/Dataset/RAER/annotation/train_80.txt \
     --test-annotation /content/drive/MyDrive/khoaluan/Dataset/RAER/annotation/val_20.txt \
     --clip-path ViT-B/32 \
-    --bounding-box-face /content/drive/MyDrive/khoaluan/Dataset/RAER/annotation/bounding_box/face.json \
-    --bounding-box-body /content/drive/MyDrive/khoaluan/Dataset/RAER/annotation/bounding_box/body.json \
+    --bounding-box-face /content/drive/MyDrive/khoaluan/Dataset/RAER/bounding_box/face.json \
+    --bounding-box-body /content/drive/MyDrive/khoaluan/Dataset/RAER/bounding_box/body.json \
     --text-type class_descriptor \
     --contexts-number 12 \
     --class-token-position end \
