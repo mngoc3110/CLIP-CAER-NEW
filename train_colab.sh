@@ -2,7 +2,7 @@
 
 python main.py \
     --mode train \
-    --exper-name m2max_fastUAR70_vitb32_wrs_logitadj_tau05_mi07_dc12 \
+    --exper-name m2max_fastUAR70_vitb32_wrs_logitadj_tau05_mi07_dc12_colab \
     --gpu 0 \
     --epochs 50 \
     --batch-size 8 \
@@ -21,11 +21,12 @@ python main.py \
     --seed 42 \
     --print-freq 10 \
     --root-dir /content/drive/MyDrive/khoaluan/Dataset/RAER \
-    --train-annotation /content/drive/MyDrive/khoaluan/Dataset/RAER/annotation/train_80.txt \
-    --test-annotation /content/drive/MyDrive/khoaluan/Dataset/RAER/annotation/val_20.txt \
+    --train-annotation /content/drive/MyDrive/khoaluan/Dataset/raer-annot/annotation/train_80.txt \
+    --val-annotation /content/drive/MyDrive/khoaluan/Dataset/raer-annot/annotation/val_20.txt \
+    --test-annotation /content/drive/MyDrive/khoaluan/Dataset/raer-annot/annotation/test.txt \
     --clip-path ViT-B/32 \
-    --bounding-box-face /content/drive/MyDrive/khoaluan/Dataset/RAER/bounding_box/face.json \
-    --bounding-box-body /content/drive/MyDrive/khoaluan/Dataset/RAER/bounding_box/body.json \
+    --bounding-box-face /content/drive/MyDrive/khoaluan/Dataset/raer-annot/annotation/bounding_box/face.json \
+    --bounding-box-body /content/drive/MyDrive/khoaluan/Dataset/raer-annot/annotation/bounding_box/body.json \
     --text-type class_descriptor \
     --contexts-number 12 \
     --class-token-position end \
@@ -43,4 +44,5 @@ python main.py \
     --temperature 0.07 \
     --use-weighted-sampler \
     --label-smoothing 0.05 \
-    --use-amp
+    --use-amp \
+    --crop-body

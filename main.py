@@ -52,6 +52,7 @@ exp_group.add_argument('--seed', type=int, default=42, help='Random seed for rep
 path_group = parser.add_argument_group('Data & Path', 'Paths to datasets and pretrained models')
 path_group.add_argument('--root-dir', type=str, help='Root directory of the dataset. E.g., /kaggle/input/raer-video-emotion-dataset/RAER')
 path_group.add_argument('--train-annotation', type=str, help='Absolute path to training annotation file. E.g., /kaggle/input/raer-annot/annotation/train_abs.txt')
+path_group.add_argument('--val-annotation', type=str, help='Absolute path to validation annotation file. E.g., /kaggle/input/raer-annot/annotation/val_20.txt')
 path_group.add_argument('--test-annotation', type=str, help='Absolute path to testing annotation file. E.g., /kaggle/input/raer-annot/annotation/test_abs.txt')
 path_group.add_argument('--clip-path', type=str, help='Path to the pretrained CLIP model.')
 path_group.add_argument('--bounding-box-face', type=str, help='Absolute path to face bounding box JSON. E.g., /kaggle/input/raer-annot/annotation/bounding_box/face_abs.json')
@@ -100,6 +101,8 @@ model_group.add_argument('--duration', type=int, default=1, help='Duration of ea
 model_group.add_argument('--image-size', type=int, default=224, help='Size to resize input images to.')
 model_group.add_argument('--slerp-weight', type=float, default=0.5, help='Weight for spherical linear interpolation (IEC).')
 model_group.add_argument('--temperature', type=float, default=0.07, help='Temperature for the classification layer.')
+model_group.add_argument('--crop-body', action='store_true', help='Crop body from the input images.')
+
 
 
 # ==================== Helper Functions ====================
@@ -164,7 +167,7 @@ def run_training(args: argparse.Namespace) -> None:
 
     # Load data
     print("=> Building dataloaders...")
-    train_loader, val_loader = build_dataloaders(args)
+    train_loader, val_loader, test_loader = build_dataloaders(args)
     print("=> Dataloaders built successfully.")
 
     # Loss and optimizer
@@ -250,16 +253,17 @@ def run_training(args: argparse.Namespace) -> None:
             f.write(f'An epoch time: {epoch_time:.2f}s\n\n')
 
     # Final evaluation with best model
+    print("=> Final evaluation on test set...")
     pre_trained_dict = torch.load(best_checkpoint_path,map_location=f"cuda:{args.gpu}")['state_dict']
     model.load_state_dict(pre_trained_dict)
     computer_uar_war(
-        val_loader=val_loader,
+        val_loader=test_loader,
         model=model,
         device=args.device,
         class_names=class_names,
         log_confusion_matrix_path=log_confusion_matrix_path,
         log_txt_path=log_txt_path,
-        title=f"Confusion Matrix on {args.dataset}"
+        title=f"Confusion Matrix on {args.dataset} Test Set"
     )
 
 def run_eval(args: argparse.Namespace) -> None:
@@ -275,11 +279,11 @@ def run_eval(args: argparse.Namespace) -> None:
     model.load_state_dict(torch.load(args.eval_checkpoint,map_location=args.device)['state_dict'])
 
     # Load data
-    _, val_loader = build_dataloaders(args)
+    _, _, test_loader = build_dataloaders(args)
 
     # Run evaluation
     computer_uar_war(
-        val_loader=val_loader,
+        val_loader=test_loader,
         model=model,
         device=args.device,
         class_names=class_names,

@@ -9,7 +9,7 @@ Kiến trúc nâng cao được xây dựng dựa trên sườn của CLIP-CAER,
 ### 1. Backbone Thị giác Hai luồng (Dual-Stream)
 Mô hình xử lý hai luồng hình ảnh riêng biệt:
 - **Luồng Gương mặt (Face Stream):** Các vùng mặt được cắt (crop) để nắm bắt các biểu cảm chi tiết, tinh vi.
-- **Luồng Ngữ cảnh (Context Stream):** Toàn bộ khung hình hoặc vùng cơ thể để nắm bắt bối cảnh và hành vi xung quanh.
+- **Luồng Ngữ cảnh (Context Stream):** Toàn bộ khung hình (full-frame) được sử dụng để nắm bắt bối cảnh và hành vi xung quanh (thay vì cắt theo bounding box của body).
 
 Cả hai luồng đều được xử lý bởi cùng một bộ mã hóa hình ảnh của CLIP (CLIP Visual Encoder).
 
@@ -24,7 +24,7 @@ Cả hai luồng đều được xử lý bởi cùng một bộ mã hóa hình 
 
 ### 4. Prompt Hai góc nhìn (Dual-View Prompting) & MI Loss
 Để ngăn các prompt có thể học (learnable prompts) bị overfitting và đi chệch khỏi ngữ nghĩa mong muốn, một chiến lược prompt hai góc nhìn được sử dụng.
-- **Góc nhìn "Mô tả" thủ công (Hand-Crafted "Descriptive" View):** Các prompt mô tả chi tiết, giàu thông tin cho mỗi lớp cảm xúc, mô tả cả hành vi và các biểu hiện vi mô trên gương mặt giống như Action Unit (AU) (ví dụ: "Một người với cặp lông mày nhíu lại và ánh mắt bối rối"). Các prompt này là cố định.
+- **Góc nhìn "Mô tả" thủ công (Hand-Crafted "Descriptive" View):** Các prompt mô tả chi tiết, giàu thông tin cho mỗi lớp cảm xúc, tập trung vào các biểu hiện vi mô trên gương mặt giống như Action Unit (AU) (ví dụ: "A person with furrowed eyebrows and a puzzled gaze"). Các prompt này là cố định.
 - **Góc nhìn "Mềm" có thể học (Learnable "Soft" View):** Các vector ngữ cảnh theo kiểu CoOp có thể được tối ưu trong quá trình huấn luyện.
 - **Mutual Information (MI) Loss:** Một hàm loss dựa trên InfoNCE được sử dụng để tối đa hóa thông tin tương hỗ (mutual information) giữa các embedding của prompt mô tả và prompt mềm (`t_desc` và `t_soft`), đảm bảo các prompt học được luôn bám sát ngữ nghĩa gốc.
 
@@ -34,28 +34,43 @@ Cả hai luồng đều được xử lý bởi cùng một bộ mã hóa hình 
 - **Công thức:** `t_mix(k) = slerp(t_desc(k), z, λ_slerp)`, trong đó `t_desc(k)` là prompt mô tả cho lớp `k`, `z` là embedding thị giác của mẫu video, và `λ_slerp` là một trọng số có thể điều chỉnh.
 - Việc phân loại cuối cùng được thực hiện bằng cách tính toán độ tương đồng giữa embedding thị giác `z` và các text prototype đã được trộn `t_mix` này.
 
-### 6. Hàm Loss Tổng hợp (Composite Loss Function)
-Mô hình được huấn luyện với một hàm loss tổng hợp:
-`L_total = L_classification + λ_mi * L_mi + λ_dc * L_dc`
-- **`L_classification`**: Hàm loss cross-entropy tiêu chuẩn cho tác vụ phân loại chính. Có hai tùy chọn để xử lý mất cân bằng dữ liệu:
-    - **Class-Balanced Loss:** Tự động gán trọng số cao hơn cho các lớp thiểu số (ít mẫu).
-    - **Logit Adjustment:** Điều chỉnh trực tiếp đầu ra logit của mô hình dựa trên tần suất xuất hiện của các lớp.
-- **`L_mi` (Mutual Information Loss)**: Regularize quá trình học prompt.
-- **`L_dc` (Decorrelation Loss)**: Khuyến khích các prompt của các lớp khác nhau trở nên khác biệt, giảm sự tương quan và tránh việc các embedding bị "sụp đổ" vào một điểm.
+### 6. Hàm Loss Tổng hợp và các Chiến lược Huấn luyện Nâng cao
+Mô hình được huấn luyện với một hàm loss tổng hợp và nhiều kỹ thuật tiên tiến:
+`L_total = L_classification + (weight_mi * L_mi) + (weight_dc * L_dc)`
+- **`L_classification`**: Hàm loss cross-entropy tiêu chuẩn. Hỗ trợ nhiều cơ chế xử lý mất cân bằng dữ liệu:
+    - **Class-Balanced Loss:** Tự động gán trọng số cao hơn cho các lớp thiểu số. Kích hoạt bằng cờ `--class-balanced-loss`.
+    - **Logit Adjustment:** Điều chỉnh trực tiếp đầu ra logit của mô hình dựa trên tần suất xuất hiện của các lớp. Kích hoạt bằng cờ `--logit-adj`.
+    - **WeightedRandomSampler:** Lấy mẫu các batch huấn luyện một cách có trọng số để đảm bảo các lớp thiểu số xuất hiện nhiều hơn. Kích hoạt bằng cờ `--use-weighted-sampler`.
+    - **Label Smoothing:** Kỹ thuật regularize giúp giảm sự tự tin thái quá của mô hình. Kích hoạt bằng `--label-smoothing [0.0...1.0]`.
+- **`L_mi` (Mutual Information Loss)**: Regularize quá trình học prompt. Trọng số được điều khiển bởi `--lambda_mi`.
+- **`L_dc` (Decorrelation Loss)**: Khuyến khích các prompt của các lớp khác nhau trở nên khác biệt. Trọng số được điều khiển bởi `--lambda_dc`.
+- **Loss Warmup & Ramp-up:** Trọng số của MI loss và DC loss được tăng dần trong quá trình huấn luyện để tăng tính ổn định, được điều khiển bởi các tham số `--mi-warmup`, `--mi-ramp`, `--dc-warmup`, `--dc-ramp`.
+- **Automatic Mixed Precision (AMP):** Tăng tốc độ huấn luyện và giảm bộ nhớ GPU bằng cách sử dụng độ chính xác 16-bit. Kích hoạt bằng cờ `--use-amp`.
 
 ## Hướng dẫn Sử dụng
 
 Quá trình huấn luyện có thể được tùy chỉnh với các tham số dòng lệnh mới để điều khiển các tính năng nâng cao.
 
+### Local
 ```bash
 bash train.sh
 ```
-Bạn có thể chỉnh sửa file `train.sh` hoặc truyền trực tiếp tham số vào `main.py`. Các tham số mới bao gồm:
-- `--mi-loss-weight` (float, mặc định: 0.5): Trọng số cho Mutual Information loss.
-- `--dc-loss-weight` (float, mặc định: 0.1): Trọng số cho Decorrelation loss.
+
+### Google Colab
+```bash
+bash train_colab.sh
+```
+
+Bạn có thể chỉnh sửa các file `.sh` hoặc truyền trực tiếp tham số vào `main.py`. Các tham số quan trọng đã được thêm vào:
+- `--lambda_mi` (float, mặc định: 0.7): Trọng số cho Mutual Information loss.
+- `--lambda_dc` (float, mặc định: 1.2): Trọng số cho Decorrelation loss.
+- `--mi-warmup`, `--mi-ramp`, `--dc-warmup`, `--dc-ramp` (int): Các tham số cho việc warmup và ramp-up loss.
 - `--lr-adapter` (float, mặc định: 1e-4): Tốc độ học (learning rate) cho Expression-aware Adapter.
 - `--slerp-weight` (float, mặc định: 0.5): Hệ số nội suy cho Instance-enhanced Classifier. Đặt bằng `0` để tắt IEC.
 - `--temperature` (float, mặc định: 0.07): Nhiệt độ (tau) cho lớp phân loại cuối cùng.
 - `--class-balanced-loss`: (cờ) Bật để sử dụng loss được cân bằng theo lớp.
 - `--logit-adj`: (cờ) Bật để sử dụng Logit Adjustment.
 - `--logit-adj-tau` (float, mặc định: 1.0): Hệ số nhiệt độ cho Logit Adjustment.
+- `--use-weighted-sampler`: (cờ) Bật để sử dụng `WeightedRandomSampler`.
+- `--label-smoothing` (float, mặc định: 0.0): Hệ số làm mượt nhãn (label smoothing).
+- `--use-amp`: (cờ) Bật để sử dụng Automatic Mixed Precision.

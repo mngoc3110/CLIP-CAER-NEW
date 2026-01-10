@@ -12,6 +12,7 @@ from PIL import ImageDraw
 import numpy as np
 import json
 import random
+import torch
 
 class VideoRecord(object):
     def __init__(self, row):
@@ -30,8 +31,7 @@ class VideoRecord(object):
         return int(self._data[2])
 
 class VideoDataset(data.Dataset):
-    def __init__(self, root_dir, list_file, num_segments, duration, mode, transform, image_size,bounding_box_face,bounding_box_body):
-        self.root_dir = root_dir
+    def __init__(self, list_file, num_segments, duration, mode, transform, image_size,bounding_box_face,bounding_box_body, crop_body=False):
         self.list_file = list_file
         self.duration = duration
         self.num_segments = num_segments
@@ -40,10 +40,12 @@ class VideoDataset(data.Dataset):
         self.mode = mode
         self.bounding_box_face = bounding_box_face
         self.bounding_box_body = bounding_box_body
+        self.crop_body = crop_body
         self._read_sample()
         self._parse_list()
         self._read_boxs()
-        self._read_body_boxes()
+        if self.crop_body: # Only read body boxes if cropping is enabled
+            self._read_body_boxes()
 
     def _read_boxs(self):
         with open(self.bounding_box_face, 'r') as f:
@@ -113,7 +115,7 @@ class VideoDataset(data.Dataset):
         #
         # Data Form: [video_id, num_frames, class_idx]
         #
-        self.video_list = [VideoRecord([os.path.join(self.root_dir, item[0])] + item[1:]) for item in self.sample_list]
+        self.video_list = [VideoRecord(item) for item in self.sample_list]
         print(('video number:%d' % (len(self.video_list))))
 
     def _get_train_indices(self, record):
@@ -150,14 +152,24 @@ class VideoDataset(data.Dataset):
 
     def get(self, record, indices):
         video_frames_path = glob.glob(os.path.join(record.path, '*'))
-        video_frames_path.sort()  
+        video_frames_path.sort()
+        
+        num_real_frames = len(video_frames_path)
+        if num_real_frames == 0:
+            print(f"Warning: No frames found for video {record.path}, returning zeros.")
+            dummy_shape = (self.num_segments * self.duration, 3, self.image_size, self.image_size)
+            return torch.zeros(dummy_shape), torch.zeros(dummy_shape), record.label - 1
+
+        # Clamp indices to be valid
+        indices = np.clip(indices, 0, num_real_frames - 1)
+        
         random_num = random.random()
         images = list()
         images_face = list()
         for seg_ind in indices:
             p = int(seg_ind)
             for i in range(self.duration):
-                img_path = os.path.join(video_frames_path[p])
+                img_path = os.path.join(record.path, video_frames_path[p]) # Assuming video_frames_path is just filenames
                 parent_dir = os.path.dirname(img_path)
                 file_name = os.path.basename(img_path)
 
@@ -171,25 +183,28 @@ class VideoDataset(data.Dataset):
 
                 img_pil = Image.open(img_path)
                 img_pil_face = Image.open(img_path)
-                body_box_path = parent_dir
-                body_box = self.body_boxes[body_box_path] if body_box_path in self.body_boxes else None
-                if body_box is not None:
-                    left, upper, right, lower = body_box
-                    img_pil_body = img_pil.crop((left, upper, right, lower))
+                
+                if self.crop_body:
+                    body_box_path = parent_dir
+                    body_box = self.body_boxes[body_box_path] if body_box_path in self.body_boxes else None
+                    if body_box is not None:
+                        left, upper, right, lower = body_box
+                        img_pil_body = img_pil.crop((left, upper, right, lower))
+                    else:
+                        img_pil_body = img_pil
                 else:
-                    img_pil_body = img_pil
+                    img_pil_body = img_pil # Use full frame if not cropping body
 
                 img_cv_body = self._pil2cv(img_pil_body)
                 img_cv_body, r = self._resize_image(img_cv_body, self.image_size, self.image_size)
                 img_pil_body = self._cv2pil(img_cv_body)
                 seg_imgs = [img_pil_body]
                 
-
                 seg_imgs_face = [self._face_detect(img_pil_face,box,margin=20,mode='face')]
 
                 images.extend(seg_imgs)
                 images_face.extend(seg_imgs_face)
-                if p < record.num_frames - 1:
+                if p < num_real_frames - 1:
                     p += 1
 
         images = self.transform(images)
@@ -203,7 +218,7 @@ class VideoDataset(data.Dataset):
         return len(self.video_list)
 
 
-def train_data_loader(root_dir, list_file, num_segments, duration, image_size,dataset_name,bounding_box_face,bounding_box_body):
+def train_data_loader(list_file, num_segments, duration, image_size,dataset_name,bounding_box_face,bounding_box_body, crop_body=False):
     if dataset_name == "RAER":
          train_transforms = torchvision.transforms.Compose([
             RandomRotation(4),
@@ -213,31 +228,33 @@ def train_data_loader(root_dir, list_file, num_segments, duration, image_size,da
             ToTorchFormatTensor()])
             
     
-    train_data = VideoDataset(root_dir=root_dir, list_file=list_file,
+    train_data = VideoDataset(list_file=list_file,
                               num_segments=num_segments, #16
                               duration=duration, #1
                               mode='train',
                               transform=train_transforms,
                               image_size=image_size,
                               bounding_box_face=bounding_box_face,
-                              bounding_box_body=bounding_box_body
+                              bounding_box_body=bounding_box_body,
+                              crop_body=crop_body
                               )
     return train_data
 
 
-def test_data_loader(root_dir, list_file, num_segments, duration, image_size,bounding_box_face,bounding_box_body):
+def test_data_loader(list_file, num_segments, duration, image_size,bounding_box_face,bounding_box_body, crop_body=False):
     
     test_transform = torchvision.transforms.Compose([GroupResize(image_size),
                                                      Stack(),
                                                      ToTorchFormatTensor()])
     
-    test_data = VideoDataset(root_dir=root_dir, list_file=list_file,
+    test_data = VideoDataset(list_file=list_file,
                              num_segments=num_segments,
                              duration=duration,
                              mode='test',
                              transform=test_transform,
                              image_size=image_size,
                              bounding_box_face=bounding_box_face,
-                             bounding_box_body=bounding_box_body
+                             bounding_box_body=bounding_box_body,
+                             crop_body=crop_body
                              )
     return test_data

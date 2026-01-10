@@ -79,7 +79,7 @@ class Trainer:
                     output, learnable_text_features, hand_crafted_text_features = self.model(images_face, images_body)
                     
                     # Apply logit adjustment
-                    if self.class_priors is not None:
+                    if self.class_priors is not None and is_train:
                         output = output + self.logit_adj_tau * torch.log(self.class_priors + 1e-12)
 
                     # Calculate loss

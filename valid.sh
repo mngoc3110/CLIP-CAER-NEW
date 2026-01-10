@@ -6,6 +6,8 @@ python main.py \
     --exper-name test_eval \
     --eval-checkpoint outputs/m2max_fastUAR70_vitb32_wrs_logitadj_tau05_mi07_dc12/model_best.pth \
     --root-dir /kaggle/input/raer-video-emotion-dataset/RAER \
+    --train-annotation /kaggle/input/raer-annot/annotation/train_80.txt \
+    --val-annotation /kaggle/input/raer-annot/annotation/val_20.txt \
     --test-annotation /kaggle/input/raer-annot/annotation/test.txt \
     --clip-path ViT-B/32 \
     --bounding-box-face /kaggle/input/raer-annot/annotation/bounding_box/face.json \
@@ -21,4 +23,5 @@ python main.py \
     --image-size 224 \
     --seed 42 \
     --slerp-weight 0.5 \
-    --temperature 0.07
+    --temperature 0.07 \
+    --crop-body

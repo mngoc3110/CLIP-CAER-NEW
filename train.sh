@@ -22,7 +22,8 @@ python main.py \
     --print-freq 10 \
     --root-dir /kaggle/input/raer-video-emotion-dataset/RAER \
     --train-annotation /kaggle/input/raer-annot/annotation/train_80.txt \
-    --test-annotation /kaggle/input/raer-annot/annotation/val_20.txt \
+    --val-annotation /kaggle/input/raer-annot/annotation/val_20.txt \
+    --test-annotation /kaggle/input/raer-annot/annotation/test.txt \
     --clip-path ViT-B/32 \
     --bounding-box-face /kaggle/input/raer-annot/annotation/bounding_box/face.json \
     --bounding-box-body /kaggle/input/raer-annot/annotation/bounding_box/body.json \
@@ -43,4 +44,5 @@ python main.py \
     --temperature 0.07 \
     --use-weighted-sampler \
     --label-smoothing 0.05 \
-    --use-amp
+    --use-amp \
+    --crop-body
