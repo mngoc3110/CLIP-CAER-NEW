@@ -73,7 +73,7 @@ def build_dataloaders(args: argparse.Namespace) -> Tuple[torch.utils.data.DataLo
     
     print("Loading train data...")
     train_data = train_data_loader(
-        root_dir=args.root_dir, list_file=train_annotation_file_path, num_segments=args.num_segments,
+        list_file=train_annotation_file_path, num_segments=args.num_segments,
         duration=args.duration, image_size=args.image_size,dataset_name=args.dataset,
         bounding_box_face=args.bounding_box_face,bounding_box_body=args.bounding_box_body,
         crop_body=args.crop_body
@@ -81,7 +81,7 @@ def build_dataloaders(args: argparse.Namespace) -> Tuple[torch.utils.data.DataLo
     
     print("Loading validation data...")
     val_data = test_data_loader(
-        root_dir=args.root_dir, list_file=val_annotation_file_path, num_segments=args.num_segments,
+        list_file=val_annotation_file_path, num_segments=args.num_segments,
         duration=args.duration, image_size=args.image_size,
         bounding_box_face=args.bounding_box_face,bounding_box_body=args.bounding_box_body,
         crop_body=args.crop_body
@@ -89,7 +89,7 @@ def build_dataloaders(args: argparse.Namespace) -> Tuple[torch.utils.data.DataLo
 
     print("Loading test data...")
     test_data = test_data_loader(
-        root_dir=args.root_dir, list_file=test_annotation_file_path, num_segments=args.num_segments,
+        list_file=test_annotation_file_path, num_segments=args.num_segments,
         duration=args.duration, image_size=args.image_size,
         bounding_box_face=args.bounding_box_face,bounding_box_body=args.bounding_box_body,
         crop_body=args.crop_body

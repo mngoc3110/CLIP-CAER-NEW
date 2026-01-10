@@ -21,12 +21,12 @@ python main.py \
     --seed 42 \
     --print-freq 10 \
     --root-dir /content/drive/MyDrive/khoaluan/Dataset/RAER \
-    --train-annotation /content/drive/MyDrive/khoaluan/Dataset/raer-annot/annotation/train_80.txt \
-    --val-annotation /content/drive/MyDrive/khoaluan/Dataset/raer-annot/annotation/val_20.txt \
-    --test-annotation /content/drive/MyDrive/khoaluan/Dataset/raer-annot/annotation/test.txt \
+    --train-annotation /content/drive/MyDrive/khoaluan/Dataset/annotation/train_80.txt \
+    --val-annotation /content/drive/MyDrive/khoaluan/Dataset/annotation/val_20.txt \
+    --test-annotation /content/drive/MyDrive/khoaluan/Dataset/annotation/test.txt \
     --clip-path ViT-B/32 \
-    --bounding-box-face /content/drive/MyDrive/khoaluan/Dataset/raer-annot/annotation/bounding_box/face.json \
-    --bounding-box-body /content/drive/MyDrive/khoaluan/Dataset/raer-annot/annotation/bounding_box/body.json \
+    --bounding-box-face /content/drive/MyDrive/khoaluan/Dataset/bounding_box/face.json \
+    --bounding-box-body /content/drive/MyDrive/khoaluan/Dataset/bounding_box/body.json \
     --text-type class_descriptor \
     --contexts-number 12 \
     --class-token-position end \
