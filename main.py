@@ -40,7 +40,7 @@ parser = argparse.ArgumentParser(
 exp_group = parser.add_argument_group('Experiment & Environment', 'Basic settings for the experiment')
 exp_group.add_argument('--mode', type=str, default='train', choices=['train', 'eval'],
                        help="Execution mode: 'train' for a full training run, 'eval' for evaluation only.")
-exp_group.add_argument('--eval-checkpoint', type=str, default='/media/D/zlm/code/CLIP_CAER/outputs_1/test-[07-09]-[22:24]/model_best.pth',
+exp_group.add_argument('--eval-checkpoint', type=str,
                        help="Path to the model checkpoint for evaluation mode (e.g., outputs/exp_name/model_best.pth).")
 exp_group.add_argument('--exper-name', type=str, default='test', help='A name for the experiment to create a unique output folder.')
 exp_group.add_argument('--dataset', type=str, default='RAER', help='Name of the dataset to use.')
@@ -50,12 +50,12 @@ exp_group.add_argument('--seed', type=int, default=42, help='Random seed for rep
 
 # --- Data & Path ---
 path_group = parser.add_argument_group('Data & Path', 'Paths to datasets and pretrained models')
-path_group.add_argument('--root-dir', type=str, default='/media/F/FERDataset/AER-DB', help='Root directory of the dataset.')
-path_group.add_argument('--train-annotation', type=str, default='RAER/train_abs.txt', help='Path to training annotation file, relative to root-dir.')
-path_group.add_argument('--test-annotation', type=str, default='RAER/test_abs.txt', help='Path to testing annotation file, relative to root-dir.')
-path_group.add_argument('--clip-path', type=str, default='/media/D/zlm/code/single_four/models/ViT-B-32.pt', help='Path to the pretrained CLIP model.')
-path_group.add_argument('--bounding-box-face', type=str, default='/media/F/FERDataset/AER-DB/RAER/bounding_box/face_abs.json')
-path_group.add_argument('--bounding-box-body', type=str, default="/media/F/FERDataset/AER-DB/RAER/bounding_box/body_abs.json")
+path_group.add_argument('--root-dir', type=str, help='Root directory of the dataset. E.g., /kaggle/input/raer-video-emotion-dataset/RAER')
+path_group.add_argument('--train-annotation', type=str, help='Absolute path to training annotation file. E.g., /kaggle/input/raer-annot/annotation/train_abs.txt')
+path_group.add_argument('--test-annotation', type=str, help='Absolute path to testing annotation file. E.g., /kaggle/input/raer-annot/annotation/test_abs.txt')
+path_group.add_argument('--clip-path', type=str, help='Path to the pretrained CLIP model.')
+path_group.add_argument('--bounding-box-face', type=str, help='Absolute path to face bounding box JSON. E.g., /kaggle/input/raer-annot/annotation/bounding_box/face_abs.json')
+path_group.add_argument('--bounding-box-body', type=str, help='Absolute path to body bounding box JSON. E.g., /kaggle/input/raer-annot/annotation/bounding_box/body_abs.json')
 
 # --- Training Control ---
 train_group = parser.add_argument_group('Training Control', 'Parameters to control the training process')
@@ -68,10 +68,16 @@ optim_group = parser.add_argument_group('Optimizer & LR', 'Hyperparameters for t
 optim_group.add_argument('--lr', type=float, default=1e-2, help='Initial learning rate for main modules.')
 optim_group.add_argument('--lr-image-encoder', type=float, default=1e-5, help='Learning rate for the image encoder part.')
 optim_group.add_argument('--lr-prompt-learner', type=float, default=1e-3, help='Learning rate for the prompt learner.')
+optim_group.add_argument('--lr-adapter', type=float, default=1e-4, help='Learning rate for the adapter.')
 optim_group.add_argument('--weight-decay', type=float, default=1e-4, help='Weight decay for the optimizer.')
 optim_group.add_argument('--momentum', type=float, default=0.9, help='Momentum for the SGD optimizer.')
 optim_group.add_argument('--milestones', nargs='+', type=int, default=[10, 15], help='Epochs at which to decay the learning rate.')
 optim_group.add_argument('--gamma', type=float, default=0.1, help='Factor for learning rate decay.')
+optim_group.add_argument('--mi-loss-weight', type=float, default=0.1, help='Weight for the Mutual Information loss.')
+optim_group.add_argument('--dc-loss-weight', type=float, default=0.1, help='Weight for the Decorrelation loss.')
+optim_group.add_argument('--class-balanced-loss', action='store_true', help='Use class-balanced loss.')
+optim_group.add_argument('--logit-adj', action='store_true', help='Use logit adjustment.')
+optim_group.add_argument('--logit-adj-tau', type=float, default=1.0, help='Temperature for logit adjustment.')
 
 # --- Model & Input ---
 model_group = parser.add_argument_group('Model & Input', 'Parameters for model architecture and data handling')
@@ -84,6 +90,8 @@ model_group.add_argument('--load_and_tune_prompt_learner', type=str, default='Tr
 model_group.add_argument('--num-segments', type=int, default=16, help='Number of segments to sample from each video.')
 model_group.add_argument('--duration', type=int, default=1, help='Duration of each segment.')
 model_group.add_argument('--image-size', type=int, default=224, help='Size to resize input images to.')
+model_group.add_argument('--slerp-weight', type=float, default=0.5, help='Weight for spherical linear interpolation (IEC).')
+model_group.add_argument('--temperature', type=float, default=0.07, help='Temperature for the classification layer.')
 
 
 # ==================== Helper Functions ====================
@@ -152,19 +160,41 @@ def run_training(args: argparse.Namespace) -> None:
     print("=> Dataloaders built successfully.")
 
     # Loss and optimizer
-    criterion = nn.CrossEntropyLoss().to(args.device)
+    class_counts = get_class_counts(args.train_annotation)
+    
+    if args.class_balanced_loss:
+        print("=> Using class-balanced loss.")
+        class_weights = 1. / torch.tensor(class_counts, dtype=torch.float)
+        class_weights = class_weights / class_weights.sum()
+        criterion = nn.CrossEntropyLoss(weight=class_weights.to(args.device)).to(args.device)
+    else:
+        criterion = nn.CrossEntropyLoss().to(args.device)
+
+    mi_criterion = MILoss().to(args.device) if args.mi_loss_weight > 0 else None
+    dc_criterion = DCLoss().to(args.device) if args.dc_loss_weight > 0 else None
+
+    class_priors = None
+    if args.logit_adj:
+        print("=> Using logit adjustment.")
+        class_priors = torch.tensor(class_counts, dtype=torch.float) / sum(class_counts)
+        class_priors = class_priors.to(args.device)
+
     optimizer = torch.optim.SGD([
         {"params": model.temporal_net.parameters(), "lr": args.lr},
         {"params": model.temporal_net_body.parameters(), "lr": args.lr},
         {"params": model.image_encoder.parameters(), "lr": args.lr_image_encoder},
         {"params": model.prompt_learner.parameters(), "lr": args.lr_prompt_learner},
-        {"params": model.project_fc.parameters(), "lr": args.lr_image_encoder}
+        {"params": model.project_fc.parameters(), "lr": args.lr_image_encoder},
+        {"params": model.face_adapter.parameters(), "lr": args.lr_adapter}
     ], momentum=args.momentum, weight_decay=args.weight_decay)
 
     scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer, milestones=args.milestones, gamma=args.gamma)
     
     # Trainer
-    trainer = Trainer(model, criterion, optimizer, scheduler, args.device, log_txt_path)
+    trainer = Trainer(model, criterion, optimizer, scheduler, args.device, log_txt_path, 
+                    mi_criterion=mi_criterion, mi_loss_weight=args.mi_loss_weight,
+                    dc_criterion=dc_criterion, dc_loss_weight=args.dc_loss_weight,
+                    class_priors=class_priors, logit_adj_tau=args.logit_adj_tau)
     
     for epoch in range(start_epoch, args.epochs):
         inf = f'******************** Epoch: {epoch} ********************'

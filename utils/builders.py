@@ -27,7 +27,7 @@ def build_model(args: argparse.Namespace, input_text: list) -> torch.nn.Module:
     for name, param in model.named_parameters():
         param.requires_grad = False
 
-    trainable_params_keywords = ["image_encoder", "temporal_net", "prompt_learner", "temporal_net_body", "project_fc"]
+    trainable_params_keywords = ["image_encoder", "temporal_net", "prompt_learner", "temporal_net_body", "project_fc", "face_adapter"]
     print('\nTrainable parameters:')
     for name, param in model.named_parameters():
         if any(keyword in name for keyword in trainable_params_keywords):
@@ -67,8 +67,8 @@ def get_class_info(args: argparse.Namespace) -> Tuple[list, list]:
 
 
 def build_dataloaders(args: argparse.Namespace) -> Tuple[torch.utils.data.DataLoader, torch.utils.data.DataLoader]: 
-    train_annotation_file_path = os.path.join(args.root_dir, args.train_annotation)
-    test_annotation_file_path = os.path.join(args.root_dir, args.test_annotation)
+    train_annotation_file_path = args.train_annotation
+    test_annotation_file_path = args.test_annotation
     
     print("Loading train data...")
     train_data = train_data_loader(

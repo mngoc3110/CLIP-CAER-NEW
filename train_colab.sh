@@ -2,8 +2,8 @@
 
 python main.py \
     --mode train \
-    --exper-name m2max_fastUAR70_vitb32_wrs_logitadj_tau05_mi07_dc12 \
-    --gpu 2 \
+    --exper-name m2max_fastUAR70_vitb32_wrs_logitadj_tau05_mi07_dc12_colab \
+    --gpu 0 \
     --epochs 50 \
     --batch-size 8 \
     --lr 0.0003 \
@@ -20,19 +20,19 @@ python main.py \
     --image-size 224 \
     --seed 42 \
     --print-freq 10 \
-    --root-dir /kaggle/input/raer-video-emotion-dataset/RAER \
-    --train-annotation /kaggle/input/raer-annot/annotation/train_80.txt \
-    --test-annotation /kaggle/input/raer-annot/annotation/val_20.txt \
+    --root-dir /content/drive/MyDrive/khoaluan/Dataset/RAER \
+    --train-annotation /content/drive/MyDrive/khoaluan/Dataset/annotation/train_80.txt \
+    --test-annotation /content/drive/MyDrive/khoaluan/Dataset/annotation/val_20.txt \
     --clip-path ViT-B/32 \
-    --bounding-box-face /kaggle/input/raer-annot/annotation/bounding_box/face.json \
-    --bounding-box-body /kaggle/input/raer-annot/annotation/bounding_box/body.json \
+    --bounding-box-face /content/drive/MyDrive/khoaluan/Dataset/annotation/bounding_box/face.json \
+    --bounding-box-body /content/drive/MyDrive/khoaluan/Dataset/annotation/bounding_box/body.json \
     --text-type class_descriptor \
     --contexts-number 12 \
     --class-token-position end \
     --class-specific-contexts True \
     --load_and_tune_prompt_learner True \
-    --lambda_mi 0.7 \
-    --lambda_dc 1.2 \
+    --mi-loss-weight 0.7 \
+    --dc-loss-weight 1.2 \
     --slerp-weight 0.5 \
     --logit-adj \
     --logit-adj-tau 0.5 \
