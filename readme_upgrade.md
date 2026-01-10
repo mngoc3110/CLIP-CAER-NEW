@@ -9,7 +9,7 @@ Kiến trúc nâng cao được xây dựng dựa trên sườn của CLIP-CAER,
 ### 1. Backbone Thị giác Hai luồng (Dual-Stream)
 Mô hình xử lý hai luồng hình ảnh riêng biệt:
 - **Luồng Gương mặt (Face Stream):** Các vùng mặt được cắt (crop) để nắm bắt các biểu cảm chi tiết, tinh vi.
-- **Luồng Ngữ cảnh (Context Stream):** Toàn bộ khung hình (full-frame) được sử dụng để nắm bắt bối cảnh và hành vi xung quanh (thay vì cắt theo bounding box của body).
+- **Luồng Ngữ cảnh (Context Stream):** Toàn bộ khung hình (full-frame) được sử dụng để nắm bắt bối cảnh và hành vi xung quanh (có thể bật/tắt bằng cờ `--crop-body`).
 
 Cả hai luồng đều được xử lý bởi cùng một bộ mã hóa hình ảnh của CLIP (CLIP Visual Encoder).
 
@@ -47,6 +47,14 @@ Mô hình được huấn luyện với một hàm loss tổng hợp và nhiều
 - **Loss Warmup & Ramp-up:** Trọng số của MI loss và DC loss được tăng dần trong quá trình huấn luyện để tăng tính ổn định, được điều khiển bởi các tham số `--mi-warmup`, `--mi-ramp`, `--dc-warmup`, `--dc-ramp`.
 - **Automatic Mixed Precision (AMP):** Tăng tốc độ huấn luyện và giảm bộ nhớ GPU bằng cách sử dụng độ chính xác 16-bit. Kích hoạt bằng cờ `--use-amp`.
 
+### 7. Logging chi tiết
+Quá trình huấn luyện giờ đây sẽ in ra các thông tin chi tiết hơn sau mỗi epoch, bao gồm:
+-   `Train WAR`, `Train UAR` của epoch hiện tại.
+-   `Valid WAR`, `Valid UAR` của epoch hiện tại.
+-   `Best Train WAR`, `Best Train UAR` tốt nhất từ đầu đến giờ.
+-   `Best Valid WAR`, `Best Valid UAR` tốt nhất từ đầu đến giờ.
+-   Ma trận nhầm lẫn (Confusion Matrix) của tập validation sau mỗi epoch.
+
 ## Hướng dẫn Sử dụng
 
 Quá trình huấn luyện có thể được tùy chỉnh với các tham số dòng lệnh mới để điều khiển các tính năng nâng cao.
@@ -62,15 +70,16 @@ bash train_colab.sh
 ```
 
 Bạn có thể chỉnh sửa các file `.sh` hoặc truyền trực tiếp tham số vào `main.py`. Các tham số quan trọng đã được thêm vào:
-- `--lambda_mi` (float, mặc định: 0.7): Trọng số cho Mutual Information loss.
-- `--lambda_dc` (float, mặc định: 1.2): Trọng số cho Decorrelation loss.
+- `--lambda_mi` (float): Trọng số cho Mutual Information loss.
+- `--lambda_dc` (float): Trọng số cho Decorrelation loss.
 - `--mi-warmup`, `--mi-ramp`, `--dc-warmup`, `--dc-ramp` (int): Các tham số cho việc warmup và ramp-up loss.
-- `--lr-adapter` (float, mặc định: 1e-4): Tốc độ học (learning rate) cho Expression-aware Adapter.
-- `--slerp-weight` (float, mặc định: 0.5): Hệ số nội suy cho Instance-enhanced Classifier. Đặt bằng `0` để tắt IEC.
-- `--temperature` (float, mặc định: 0.07): Nhiệt độ (tau) cho lớp phân loại cuối cùng.
+- `--lr-adapter` (float): Tốc độ học (learning rate) cho Expression-aware Adapter.
+- `--slerp-weight` (float): Hệ số nội suy cho Instance-enhanced Classifier. Đặt bằng `0` để tắt IEC.
+- `--temperature` (float): Nhiệt độ (tau) cho lớp phân loại cuối cùng.
 - `--class-balanced-loss`: (cờ) Bật để sử dụng loss được cân bằng theo lớp.
 - `--logit-adj`: (cờ) Bật để sử dụng Logit Adjustment.
-- `--logit-adj-tau` (float, mặc định: 1.0): Hệ số nhiệt độ cho Logit Adjustment.
+- `--logit-adj-tau` (float): Hệ số nhiệt độ cho Logit Adjustment.
 - `--use-weighted-sampler`: (cờ) Bật để sử dụng `WeightedRandomSampler`.
-- `--label-smoothing` (float, mặc định: 0.0): Hệ số làm mượt nhãn (label smoothing).
+- `--label-smoothing` (float): Hệ số làm mượt nhãn (label smoothing).
 - `--use-amp`: (cờ) Bật để sử dụng Automatic Mixed Precision.
+- `--crop-body`: (cờ) Bật để cắt vùng body thay vì dùng toàn bộ khung hình.

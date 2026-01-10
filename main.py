@@ -154,7 +154,10 @@ def run_training(args: argparse.Namespace) -> None:
     log_confusion_matrix_path = os.path.join(args.output_path, 'confusion_matrix.png')
     checkpoint_path = os.path.join(args.output_path, 'model.pth')
     best_checkpoint_path = os.path.join(args.output_path, 'model_best.pth')        
-    best_uar = 0.0
+    best_train_uar = 0.0
+    best_train_war = 0.0
+    best_val_uar = 0.0
+    best_val_war = 0.0
     start_epoch = 0
     recorder = RecorderMeter(args.epochs)
     
@@ -228,16 +231,20 @@ def run_training(args: argparse.Namespace) -> None:
 
         # Train & Validate
         train_war, train_uar, train_los, _ = trainer.train_epoch(train_loader, epoch)
-        val_war, val_uar, val_los, _ = trainer.validate(val_loader, str(epoch))
+        val_war, val_uar, val_los, val_cm = trainer.validate(val_loader, str(epoch))
         scheduler.step()
 
         # Save checkpoint
-        is_best = val_uar > best_uar
-        best_uar = max(val_uar, best_uar)
+        is_best = val_uar > best_val_uar
+        best_val_uar = max(val_uar, best_val_uar)
+        best_val_war = max(val_war, best_val_war)
+        best_train_uar = max(train_uar, best_train_uar)
+        best_train_war = max(train_war, best_train_war)
+
         save_checkpoint({
             'epoch': epoch + 1,
             'state_dict': model.state_dict(),
-            'best_acc': best_uar, 
+            'best_acc': best_val_uar, 
             'optimizer': optimizer.state_dict(),
             'recorder': recorder
         }, is_best, checkpoint_path, best_checkpoint_path)
@@ -246,11 +253,17 @@ def run_training(args: argparse.Namespace) -> None:
         epoch_time = time.time() - start_time
         recorder.update(epoch, train_los, train_war, val_los, val_uar)
         recorder.plot_curve(log_curve_path)
-        print(f'The best UAR: {best_uar:.4f}')
-        print(f'An epoch time: {epoch_time:.2f}s\n')
+        
+        log_msg = (
+                   f'Train WAR: {train_war:.2f}% | Train UAR: {train_uar:.2f}%\n'
+                   f'Valid WAR: {val_war:.2f}% | Valid UAR: {val_uar:.2f}%\n'
+                   f'Best Valid WAR: {best_val_war:.2f}% | Best Valid UAR: {best_val_uar:.2f}%\n'
+                   f'Best Train WAR: {best_train_war:.2f}% | Best Train UAR: {best_train_uar:.2f}%\n'
+                   f'An epoch time: {epoch_time:.2f}s\n'
+                   f'Validation Confusion Matrix:\n{val_cm}')
+        print(log_msg)
         with open(log_txt_path, 'a') as f:
-            f.write(f'The best UAR: {best_uar:.4f}\n')
-            f.write(f'An epoch time: {epoch_time:.2f}s\n\n')
+            f.write(log_msg + '\n\n')
 
     # Final evaluation with best model
     print("=> Final evaluation on test set...")
