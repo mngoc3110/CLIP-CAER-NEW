@@ -5,7 +5,7 @@ python main.py \
     --gpu 0 \
     --exper-name test_eval \
     --eval-checkpoint outputs/m2max_fastUAR70_vitb32_wrs_logitadj_tau05_mi07_dc12/model_best.pth \
-    --root-dir /kaggle/input/raer-video-emotion-dataset/RAER \
+    --root-dir /kaggle/input/raer-video-emotion-dataset \
     --train-annotation /kaggle/input/raer-annot/annotation/train.txt \
     --val-annotation /kaggle/input/raer-annot/annotation/test.txt \
     --test-annotation /kaggle/input/raer-annot/annotation/test.txt \

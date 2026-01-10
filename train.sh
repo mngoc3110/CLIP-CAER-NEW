@@ -20,7 +20,7 @@ python main.py \
     --image-size 224 \
     --seed 42 \
     --print-freq 10 \
-    --root-dir /kaggle/input/raer-video-emotion-dataset/RAER \
+    --root-dir /kaggle/input/raer-video-emotion-dataset \
     --train-annotation /kaggle/input/raer-annot/annotation/train.txt \
     --val-annotation /kaggle/input/raer-annot/annotation/test.txt \
     --test-annotation /kaggle/input/raer-annot/annotation/test.txt \
