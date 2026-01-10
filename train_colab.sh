@@ -3,7 +3,7 @@
 python main.py \
     --mode train \
     --exper-name m2max_fastUAR70_vitb32_wrs_logitadj_tau05_mi07_dc12 \
-    --gpu 2 \
+    --gpu 0 \
     --epochs 50 \
     --batch-size 8 \
     --lr 0.0003 \
