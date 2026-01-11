@@ -2,7 +2,7 @@
 
 python main.py \
     --mode train \
-    --exper-name m2max_safe_end_to_end \
+    --exper-name debug_no_mi_dc \
     --gpu 0 \
     --epochs 50 \
     --batch-size 8 \
@@ -32,8 +32,8 @@ python main.py \
     --class-token-position end \
     --class-specific-contexts True \
     --load_and_tune_prompt_learner True \
-    --lambda_mi 0.2 \
-    --lambda_dc 0.3 \
+    --lambda_mi 0 \
+    --lambda_dc 0 \
     --mi-warmup 10 \
     --mi-ramp 10 \
     --dc-warmup 10 \
@@ -41,7 +41,7 @@ python main.py \
     --slerp-weight 0.5 \
     --temperature 0.2 \
     --use-weighted-sampler \
-    --label-smoothing 0.02 \
+    --label-smoothing 0 \
     --use-amp \
     --crop-body \
     --grad-clip 1.0

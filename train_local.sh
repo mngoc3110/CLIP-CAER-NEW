@@ -40,22 +40,20 @@ python main.py \
     --bounding-box-face "$ANNOT_DIR/RAER/bounding_box/face.json" \
     --bounding-box-body "$ANNOT_DIR/RAER/bounding_box/body.json" \
     --text-type class_descriptor \
-    --contexts-number 12 \
+    --contexts-number 8 \
     --class-token-position end \
     --class-specific-contexts True \
     --load_and_tune_prompt_learner True \
-    --lambda_mi 0.7 \
-    --lambda_dc 1.2 \
-    --mi-warmup 5 \
-    --mi-ramp 8 \
-    --dc-warmup 5 \
-    --dc-ramp 10 \
+    --lambda_mi 0.2 \
+    --lambda_dc 0.3 \
+    --mi-warmup 10 \
+    --mi-ramp 10 \
+    --dc-warmup 10 \
+    --dc-ramp 15 \
     --slerp-weight 0.5 \
-    --logit-adj \
-    --logit-adj-tau 0.5 \
-    --temperature 0.07 \
+    --temperature 0.2 \
     --use-weighted-sampler \
-    --label-smoothing 0.05 \
+    --label-smoothing 0.02 \
     --use-amp \
     --crop-body \
     --grad-clip 1.0
