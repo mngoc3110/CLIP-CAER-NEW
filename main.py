@@ -242,7 +242,7 @@ def run_training(args: argparse.Namespace) -> None:
         print(log_msg)
 
         # Train & Validate
-        train_war, train_uar, train_los, _ = trainer.train_epoch(train_loader, epoch)
+        train_war, train_uar, train_los, train_cm = trainer.train_epoch(train_loader, epoch)
         val_war, val_uar, val_los, val_cm = trainer.validate(val_loader, str(epoch))
         trainer.scheduler.step()
 
@@ -266,16 +266,19 @@ def run_training(args: argparse.Namespace) -> None:
         recorder.update(epoch, train_los, train_war, train_uar, val_los, val_war, val_uar)
         recorder.plot_curve(log_curve_path)
         
-        log_msg = (
+        log_msg = (f'\n'
+                   f'--- Epoch {epoch} Summary ---\n'
                    f'Train WAR: {train_war:.2f}% | Train UAR: {train_uar:.2f}%\n'
                    f'Valid WAR: {val_war:.2f}% | Valid UAR: {val_uar:.2f}%\n'
-                   f'Best Valid WAR: {best_val_war:.2f}% | Best Valid UAR: {best_val_uar:.2f}%\n'
-                   f'Best Train WAR: {best_train_war:.2f}% | Best Train UAR: {best_train_uar:.2f}%\n'
-                   f'An epoch time: {epoch_time:.2f}s\n'
-                   f'Validation Confusion Matrix:\n{val_cm}')
-    print(log_msg)
-    with open(log_txt_path, 'a') as f:
-        f.write(log_msg + '\n\n')
+                   f'Best Valid UAR so far: {best_val_uar:.2f}%\n'
+                   f'Time: {epoch_time:.2f}s\n'
+                   f'Train Confusion Matrix:\n{train_cm}\n'
+                   f'Validation Confusion Matrix:\n{val_cm}\n'
+                   f'--- End of Epoch {epoch} ---\n'
+                   )
+        print(log_msg)
+        with open(log_txt_path, 'a') as f:
+            f.write(log_msg + '\n\n')
 
     # Final evaluation with best model
     print("=> Final evaluation on test set...")
