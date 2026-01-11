@@ -14,7 +14,7 @@ class Trainer:
                  dc_criterion=None, lambda_dc=0,
                  class_priors=None, logit_adj_tau=1.0,
                  mi_warmup=0, mi_ramp=0,
-                 dc_warmup=0, dc_ramp=0, use_amp=False):
+                 dc_warmup=0, dc_ramp=0, use_amp=False, grad_clip=1.0):
         self.model = model
         self.criterion = criterion
         self.optimizer = optimizer
@@ -33,6 +33,7 @@ class Trainer:
         self.dc_warmup = dc_warmup
         self.dc_ramp = dc_ramp
         self.use_amp = use_amp
+        self.grad_clip = grad_clip
         if self.use_amp:
             self.scaler = torch.cuda.amp.GradScaler()
 
@@ -102,10 +103,15 @@ class Trainer:
                     self.optimizer.zero_grad()
                     if self.use_amp:
                         self.scaler.scale(loss).backward()
+                        if self.grad_clip > 0:
+                            self.scaler.unscale_(self.optimizer)
+                            torch.nn.utils.clip_grad_norm_(self.model.parameters(), self.grad_clip)
                         self.scaler.step(self.optimizer)
                         self.scaler.update()
                     else:
                         loss.backward()
+                        if self.grad_clip > 0:
+                            torch.nn.utils.clip_grad_norm_(self.model.parameters(), self.grad_clip)
                         self.optimizer.step()
 
                 # Record metrics
@@ -135,7 +141,7 @@ class Trainer:
 
         logging.info(f"{prefix} * WAR: {war:.3f} | UAR: {uar:.3f}")
         with open(self.log_txt_path, 'a') as f:
-            f.write('Current UAR: {war:.3f}'.format(war=war) + '\n')
+            f.write('Current WAR: {war:.3f}'.format(war=war) + '\n')
             f.write('Current UAR: {uar:.3f}'.format(uar=uar) + '\n')
         return war, uar, losses.avg, cm
         

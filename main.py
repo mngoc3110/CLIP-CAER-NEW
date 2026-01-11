@@ -64,6 +64,7 @@ train_group.add_argument('--epochs', type=int, default=50, help='Total number of
 train_group.add_argument('--batch-size', type=int, default=8, help='Batch size for training and validation.')
 train_group.add_argument('--print-freq', type=int, default=10, help='Frequency of printing training logs.')
 train_group.add_argument('--use-amp', action='store_true', help='Use Automatic Mixed Precision.')
+train_group.add_argument('--grad-clip', type=float, default=1.0, help='Gradient clipping value.')
 
 # --- Optimizer & Learning Rate ---
 optim_group = parser.add_argument_group('Optimizer & LR', 'Hyperparameters for the optimizer and scheduler')
@@ -247,7 +248,7 @@ def run_training(args: argparse.Namespace) -> None:
         trainer = Trainer(model, criterion, optimizer, scheduler, args.device, log_txt_path, 
                         mi_criterion=mi_criterion, lambda_mi=args.lambda_mi, dc_criterion=dc_criterion, lambda_dc=args.lambda_dc,
                         class_priors=class_priors, logit_adj_tau=args.logit_adj_tau,
-                        mi_warmup=args.mi_warmup, mi_ramp=args.mi_ramp, dc_warmup=args.dc_warmup, dc_ramp=args.dc_ramp, use_amp=args.use_amp)
+                        mi_warmup=args.mi_warmup, mi_ramp=args.mi_ramp, dc_warmup=args.dc_warmup, dc_ramp=args.dc_ramp, use_amp=args.use_amp, grad_clip=args.grad_clip)
         
         for epoch in range(args.epochs_stage1):
             run_one_training_epoch(trainer, train_loader, val_loader, checkpoint_path, best_checkpoint_path, epoch, recorder, best_val_uar, best_val_war, best_train_uar, best_train_war, log_txt_path, log_curve_path)
@@ -300,7 +301,7 @@ def run_training(args: argparse.Namespace) -> None:
                         dc_criterion=dc_criterion, lambda_dc=args.lambda_dc,
                         class_priors=class_priors, logit_adj_tau=args.logit_adj_tau,
                         mi_warmup=args.mi_warmup, mi_ramp=args.mi_ramp,
-                        dc_warmup=args.dc_warmup, dc_ramp=args.dc_ramp, use_amp=args.use_amp)
+                        dc_warmup=args.dc_warmup, dc_ramp=args.dc_ramp, use_amp=args.use_amp, grad_clip=args.grad_clip)
         for epoch in range(start_epoch, args.epochs):
              run_one_training_epoch(trainer, train_loader, val_loader, checkpoint_path, best_checkpoint_path, epoch, recorder, best_val_uar, best_val_war, best_train_uar, best_train_war, log_txt_path, log_curve_path)
 
@@ -355,7 +356,7 @@ def run_one_training_epoch(trainer, train_loader, val_loader, checkpoint_path, b
 
     # Record metrics
     epoch_time = time.time() - start_time
-    recorder.update(epoch, train_los, train_war, val_los, val_uar)
+    recorder.update(epoch, train_los, train_war, train_uar, val_los, val_war, val_uar)
     recorder.plot_curve(log_curve_path)
     
     log_msg = (

@@ -46,6 +46,7 @@ Mô hình được huấn luyện với một hàm loss tổng hợp và nhiều
 - **`L_dc` (Decorrelation Loss)**: Khuyến khích các prompt của các lớp khác nhau trở nên khác biệt. Trọng số được điều khiển bởi `--lambda_dc`.
 - **Loss Warmup & Ramp-up:** Trọng số của MI loss và DC loss được tăng dần trong quá trình huấn luyện để tăng tính ổn định, được điều khiển bởi các tham số `--mi-warmup`, `--mi-ramp`, `--dc-warmup`, `--dc-ramp`.
 - **Automatic Mixed Precision (AMP):** Tăng tốc độ huấn luyện và giảm bộ nhớ GPU bằng cách sử dụng độ chính xác 16-bit. Kích hoạt bằng cờ `--use-amp`.
+- **Gradient Clipping:** Giới hạn độ lớn của gradient để ngăn chặn hiện tượng "bùng nổ gradient" và ổn định quá trình huấn luyện. Kích hoạt bằng `--grad-clip [giá trị]`.
 
 ### 7. Huấn luyện theo giai đoạn (Staged Training)
 Để đảm bảo quá trình huấn luyện ổn định hơn và hội tụ tốt hơn cho các mô hình phức tạp, kỹ thuật huấn luyện theo giai đoạn đã được triển khai. Quá trình này chia việc huấn luyện thành ba giai đoạn chính, mỗi giai đoạn tập trung vào việc huấn luyện một tập hợp các tham số khác nhau của mô hình:
@@ -92,4 +93,5 @@ Bạn có thể chỉnh sửa các file `.sh` hoặc truyền trực tiếp tham
 - `--use-weighted-sampler`: (cờ) Bật để sử dụng `WeightedRandomSampler`.
 - `--label-smoothing` (float): Hệ số làm mượt nhãn (label smoothing).
 - `--use-amp`: (cờ) Bật để sử dụng Automatic Mixed Precision.
+- `--grad-clip` (float): Giá trị giới hạn cho gradient clipping (ví dụ: 1.0).
 - `--crop-body`: (cờ) Bật để cắt vùng body thay vì dùng toàn bộ khung hình.

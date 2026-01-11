@@ -9,7 +9,7 @@ python main.py \
     --epochs-stage2 20 \
     --epochs-stage3 20 \
     --lr-stage1 0.001 \
-    --lr-stage2 1e-4 \
+    --lr-stage2 1e-5 \
     --lr-stage3 1e-5 \
     --batch-size 8 \
     --lr-image-encoder 1e-06 \
@@ -50,4 +50,5 @@ python main.py \
     --use-weighted-sampler \
     --label-smoothing 0.05 \
     --use-amp \
-    --crop-body
+    --crop-body \
+    --grad-clip 1.0

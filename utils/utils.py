@@ -125,42 +125,52 @@ class RecorderMeter(object):
         self.total_epoch = total_epoch
         self.current_epoch = 0
         self.epoch_losses = np.zeros((self.total_epoch, 2), dtype=np.float32)    # [epoch, train/val]
-        self.epoch_accuracy = np.zeros((self.total_epoch, 2), dtype=np.float32)  # [epoch, train/val]
+        self.epoch_metrics = np.zeros((self.total_epoch, 4), dtype=np.float32)  # [epoch, train_war/train_uar/val_war/val_uar]
 
-    def update(self, idx, train_loss, train_acc, val_loss, val_acc):
-        self.epoch_losses[idx, 0] = train_loss * 50
-        self.epoch_losses[idx, 1] = val_loss * 50
-        self.epoch_accuracy[idx, 0] = train_acc
-        self.epoch_accuracy[idx, 1] = val_acc
+    def update(self, idx, train_loss, train_war, train_uar, val_loss, val_war, val_uar):
+        self.epoch_losses[idx, 0] = train_loss
+        self.epoch_losses[idx, 1] = val_loss
+        self.epoch_metrics[idx, 0] = train_war
+        self.epoch_metrics[idx, 1] = train_uar
+        self.epoch_metrics[idx, 2] = val_war
+        self.epoch_metrics[idx, 3] = val_uar
         self.current_epoch = idx + 1
 
     def plot_curve(self, save_path):
-        title = 'the accuracy/loss curve of train/val'
-        dpi = 80
-        width, height = 1600, 800
+        title = 'Training and Validation Metrics'
+        dpi = 100
+        width, height = 1800, 800
         legend_fontsize = 10
         figsize = width / float(dpi), height / float(dpi)
 
-        fig = plt.figure(figsize=figsize)
-        x_axis = np.array([i + 1 for i in range(self.total_epoch)])
+        fig, ax1 = plt.subplots(figsize=figsize)
+        x_axis = np.array([i for i in range(self.current_epoch)])
 
-        plt.xlim(0, self.total_epoch)
-        plt.ylim(0, 100)
-        interval_y = 5
-        interval_x = 1 if self.total_epoch < 25 else 5
-        plt.xticks(np.arange(0, self.total_epoch + interval_x, interval_x))
-        plt.yticks(np.arange(0, 100 + interval_y, interval_y))
-        plt.grid()
-        plt.title(title, fontsize=20)
-        plt.xlabel('the training epoch', fontsize=16)
-        plt.ylabel('accuracy', fontsize=16)
-
-        plt.plot(x_axis, self.epoch_accuracy[:, 0], color='g', linestyle='-', label='train-accuracy', lw=2)
-        plt.plot(x_axis, self.epoch_accuracy[:, 1], color='y', linestyle='-', label='valid-accuracy', lw=2)
-        plt.plot(x_axis, self.epoch_losses[:, 0], color='g', linestyle=':', label='train-loss-x50', lw=2)
-        plt.plot(x_axis, self.epoch_losses[:, 1], color='y', linestyle=':', label='valid-loss-x50', lw=2)
+        # Plot Losses on the first y-axis
+        ax1.set_xlabel('Epoch')
+        ax1.set_ylabel('Loss')
+        ax1.plot(x_axis, self.epoch_losses[:self.current_epoch, 0], color='tab:red', linestyle='-', label='Train Loss')
+        ax1.plot(x_axis, self.epoch_losses[:self.current_epoch, 1], color='tab:orange', linestyle='-', label='Valid Loss')
+        ax1.tick_params(axis='y')
         
-        plt.legend(loc=4, fontsize=legend_fontsize)
+        # Create a second y-axis for the accuracies
+        ax2 = ax1.twinx()
+        ax2.set_ylabel('Accuracy (%)')
+        ax2.plot(x_axis, self.epoch_metrics[:self.current_epoch, 0], color='tab:green', linestyle='--', label='Train WAR')
+        ax2.plot(x_axis, self.epoch_metrics[:self.current_epoch, 1], color='tab:blue', linestyle='--', label='Train UAR')
+        ax2.plot(x_axis, self.epoch_metrics[:self.current_epoch, 2], color='tab:purple', linestyle='--', label='Valid WAR')
+        ax2.plot(x_axis, self.epoch_metrics[:self.current_epoch, 3], color='tab:cyan', linestyle='--', label='Valid UAR')
+        ax2.tick_params(axis='y')
+        ax2.set_ylim(0, 100)
+
+        # Add a single legend for all lines
+        lines, labels = ax1.get_legend_handles_labels()
+        lines2, labels2 = ax2.get_legend_handles_labels()
+        ax2.legend(lines + lines2, labels + labels2, loc='upper left', fontsize=legend_fontsize)
+        
+        fig.tight_layout()
+        plt.title(title, fontsize=20)
+        plt.grid()
 
         if save_path is not None:
             fig.savefig(save_path, dpi=dpi, bbox_inches='tight')
