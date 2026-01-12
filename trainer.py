@@ -122,7 +122,7 @@ class Trainer:
 
                     # Apply logit adjustment
                     if self.class_priors is not None and is_train:
-                        output = output + self.logit_adj_tau * torch.log(self.class_priors + 1e-12)
+                        output = output - self.logit_adj_tau * torch.log(self.class_priors + 1e-12)
 
                     # Calculate loss
                     classification_loss = self.criterion(output, target)

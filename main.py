@@ -291,8 +291,9 @@ def run_training(args: argparse.Namespace) -> None:
 
     # Final evaluation with best model
     print("=> Final evaluation on test set...")
-    pre_trained_dict = torch.load(best_checkpoint_path,map_location=f"cuda:{args.gpu}")['state_dict']
-    model.load_state_dict(pre_trained_dict)
+    ckpt = torch.load(best_checkpoint_path, map_location=args.device)
+    model.load_state_dict(ckpt["state_dict"])
+
     computer_uar_war(
         val_loader=test_loader,
         model=model,

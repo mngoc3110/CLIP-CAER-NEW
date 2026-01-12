@@ -1,10 +1,15 @@
 #!/bin/bash
-#Phiên bản 1
+# STAGE 1: Resume from checkpoint and apply Logit Adjustment.
+# NOTE: Please replace the placeholder path for --eval-checkpoint.
+
 python main.py \
   --mode train \
-  --exper-name final_LSR2_AdamW_Ensemble_baselineProtocol_SAFE \
+  --eval-checkpoint "/PATH/TO/YOUR/model_best.pth" \
+  --exper-name stage1_logit_adj_from_e15 \
+  --logit-adj \
+  --logit-adj-tau 1.0 \
   --gpu 0 \
-  --epochs 50 \
+  --epochs 30 \
   --batch-size 8 \
   --optimizer AdamW \
   --lr 1e-4 \
@@ -40,8 +45,6 @@ python main.py \
   --mi-ramp 15 \
   --slerp-weight 0.0 \
   --temperature 0.5 \
-  --label-smoothing 0.02 \
   --use-amp \
-  --use-weighted-sampler \
   --crop-body \
   --grad-clip 1.0
