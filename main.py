@@ -286,6 +286,7 @@ def run_training(args: argparse.Namespace) -> None:
         optimizer, milestones=args.milestones, gamma=args.gamma
     )
 
+    print(f"[DEBUG] Passing to Trainer: two_head_loss={args.two_head_loss}")
     trainer = Trainer(
         model, criterion, optimizer, scheduler, args.device, log_txt_path,
         mi_criterion=mi_criterion, lambda_mi=args.lambda_mi,
