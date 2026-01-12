@@ -126,9 +126,7 @@ class Trainer:
         progress = ProgressMeter(len(loader), meters, prefix=prefix, log_txt_path=self.log_txt_path)
 
         all_targets_cpu = []
-        # For sweep
         all_logits_bin_cpu, all_logits_4_cpu = [], []
-        # For non-sweep modes
         all_preds_cpu = []
 
         context = torch.enable_grad() if is_train else torch.no_grad()
@@ -183,7 +181,6 @@ class Trainer:
                         if self.grad_clip > 0: torch.nn.utils.clip_grad_norm_(self.model.parameters(), self.grad_clip)
                         self.optimizer.step()
 
-                # --- Collect data for metrics ---
                 losses.update(loss.item(), target.size(0))
                 all_targets_cpu.append(target.cpu())
                 
@@ -204,7 +201,6 @@ class Trainer:
 
                 if i % self.print_freq == 0: progress.display(i)
 
-        # --- Epoch-level metrics calculation ---
         all_targets_cat = torch.cat(all_targets_cpu)
         
         if not is_train and self.two_head_loss:
@@ -234,10 +230,9 @@ class Trainer:
             uar = best_uar
             cm = best_cm
             war = 100.0 * cm.diagonal().sum() / cm.sum()
-            
             log_msg = f"{prefix} * WAR: {war:.3f} % | UAR: {uar:.3f} % || >>> Optimal Threshold Found: {optimal_thr:.2f}"
             
-        else: # Training or 5-class validation
+        else:
             all_preds_cat = torch.cat(all_preds_cpu)
             cm = confusion_matrix(all_targets_cat.numpy(), all_preds_cat.numpy(), labels=np.arange(5))
             war = war_meter.avg
@@ -248,6 +243,9 @@ class Trainer:
         logging.info(log_msg)
         with open(self.log_txt_path, "a") as f:
             f.write(log_msg + "\n")
+            # Also log optimal thr to file
+            if not is_train and self.two_head_loss:
+                f.write(f">>> Optimal Threshold: {optimal_thr:.2f}\n")
         
         return war, uar, losses.avg, cm
 

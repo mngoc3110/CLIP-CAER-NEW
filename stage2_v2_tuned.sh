@@ -48,7 +48,6 @@ python main.py \
   --num-segments 16 \
   --duration 1 \
   --image-size 224 \
-  --crop-body \
   \
   --use-weighted-sampler \
   --lambda_mi 0.05 \
