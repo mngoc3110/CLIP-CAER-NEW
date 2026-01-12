@@ -3,7 +3,7 @@ python main.py \
   --resume-from "/kaggle/input/clip-caer-new-v1/CLIP-CAER-NEW-V1/model_best.pth" \
   --exper-name stage2_conf_split_softgate \
   --gpu 0 \
-  --epochs 15 \
+  --epochs 50 \
   --batch-size 8 \
   --optimizer AdamW \
   --lr 5e-5 \
