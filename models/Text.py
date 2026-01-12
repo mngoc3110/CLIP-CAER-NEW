@@ -40,34 +40,71 @@ class_descriptor_5 = [
 
 # Prompt Ensemble for RAER (5 classes)
 # Each inner list contains multiple descriptions for a single class.
-prompt_ensemble_5 = [
-    [   # Neutral
-        "A photo of a student with a neutral expression.",
-        "A photo of a student sitting still and watching the lecture.",
-        "A photo of a student with a calm face and neutral body posture."
-    ],
-    [   # Enjoyment
-        "A photo of a student showing enjoyment while learning.",
-        "A photo of a student with a happy face and a slight smile.",
-        "A photo of a student who looks engaged and interested in the lesson."
-    ],
-    [   # Confusion
-        "A photo of a student who is confused.",
-        "A photo of a student with a puzzled look and furrowed eyebrows.",
-        "A photo of a student staring at the material as if trying to understand."
-    ],
-    [   # Fatigue
-        "A photo of a student who appears fatigued or sleepy.",
-        "A photo of a student with drooping eyelids or yawning.",
-        "A photo of a student showing low energy with a lowered head."
-    ],
-    [   # Distraction
-        "A photo of a student who is distracted from learning.",
-        "A photo of a student looking away from the lesson or checking a phone.",
-        "A photo of a student with a wandering gaze and unfocused eyes."
-    ]
-]
+# prompt_ensemble_5 = [
+#     [   # Neutral
+#         "A photo of a student with a neutral expression.",
+#         "A photo of a student sitting still and watching the lecture.",
+#         "A photo of a student with a calm face and neutral body posture."
+#     ],
+#     [   # Enjoyment
+#         "A photo of a student showing enjoyment while learning.",
+#         "A photo of a student with a happy face and a slight smile.",
+#         "A photo of a student who looks engaged and interested in the lesson."
+#     ],
+#     [   # Confusion
+#         "A photo of a student who is confused.",
+#         "A photo of a student with a puzzled look and furrowed eyebrows.",
+#         "A photo of a student staring at the material as if trying to understand."
+#     ],
+#     [   # Fatigue
+#         "A photo of a student who appears fatigued or sleepy.",
+#         "A photo of a student with drooping eyelids or yawning.",
+#         "A photo of a student showing low energy with a lowered head."
+#     ],
+#     [   # Distraction
+#         "A photo of a student who is distracted from learning.",
+#         "A photo of a student looking away from the lesson or checking a phone.",
+#         "A photo of a student with a wandering gaze and unfocused eyes."
+#     ]
+# ]
 
+#chỉnh prompt ensemble prompt cho phù hợp với mục đích nhận diện trạng thái học tập vì tắt crop body
+prompt_ensemble_5 = [
+  # 0 Neutrality
+  [
+    "A photo of a student with a neutral facial expression, relaxed eyebrows, and calm eyes.",
+    "A photo of a student looking calm and composed while learning, with a relaxed face.",
+    "A photo of a student with a natural, neutral look, no strong emotion on the face."
+  ],
+
+  # 1 Enjoyment
+  [
+    "A photo of a student showing enjoyment while learning, with a gentle smile and bright eyes.",
+    "A photo of a student looking happy and engaged, smiling slightly while studying.",
+    "A photo of a student with cheerful eyes and an upturned mouth, enjoying the lesson."
+  ],
+
+  # 2 Confusion (face/cognitive struggle mạnh hơn)
+  [
+    "A photo of a student with a puzzled expression, furrowed eyebrows, and slightly squinting eyes.",
+    "A photo of a student staring at the material with uncertainty, as if struggling to understand.",
+    "A photo of a student showing confusion while learning, with a tense face and slightly open mouth."
+  ],
+
+  # 3 Fatigue
+  [
+    "A photo of a student who looks fatigued, with drooping eyelids and a low-energy face.",
+    "A photo of a student looking sleepy or tired while studying, with heavy eyes and a slack mouth.",
+    "A photo of a student yawning or having half-closed eyes, showing fatigue during learning."
+  ],
+
+  # 4 Distraction
+  [
+    "A photo of a student who is distracted, with a wandering gaze and unfocused eyes.",
+    "A photo of a student looking away from the learning material, attention clearly not on the lesson.",
+    "A photo of a student with an inattentive expression, eyes drifting away and not concentrating."
+  ],
+]
 class_descriptor_8 = [
     'A person who is feeling neutral.',
     'A person who is feeling happy.',
