@@ -9,7 +9,7 @@ python main.py \
   --exper-name stage2_fusionA_weighted_sampler_nocropbody \
   --gpu 0 \
   \
-  --epochs 20 \
+  --epochs 30 \
   --batch-size 8 \
   \
   --optimizer AdamW \
