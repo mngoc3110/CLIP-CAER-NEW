@@ -37,10 +37,10 @@ python main.py \
   --duration 1 \
   --image-size 224 \
   \
-  --lambda-mi 0.05 \
+  --lambda_mi 0.05 \
   --mi-warmup 0 \
   --mi-ramp 5 \
-  --lambda-dc 0.08 \
+  --lambda_dc 0.08 \
   --dc-warmup 0 \
   --dc-ramp 5 \
   \
