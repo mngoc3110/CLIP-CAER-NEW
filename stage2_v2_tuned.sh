@@ -13,7 +13,7 @@ RESUME_CKPT="/kaggle/input/clip-caer-new-v1/CLIP-CAER-NEW-V1/model_best.pth"
 python main.py \
   --mode train \
   --resume-from "${RESUME_CKPT}" \
-  --exper-name stage2_v2_sampler_tuned_gate_find_threst_hold \
+  --exper-name stage2_v2_sampler_tuned_gate_find_threst_hold_new \
   --gpu 0 \
   --epochs 20 \
   --batch-size 8 \
