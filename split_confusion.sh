@@ -1,12 +1,6 @@
-#!/bin/bash
-set -e
-
-# NOTE: Please replace the placeholder path for --resume-from.
-RESUME_CKPT="/PATH/TO/YOUR/model_best.pth"
-
 python main.py \
   --mode train \
-  --resume-from "${RESUME_CKPT}" \
+  --resume-from "kaggle/input/clip-caer-new-v1/CLIP-CAER-NEW-V1/model_best.pth" \
   --exper-name stage2_conf_split_softgate \
   --gpu 0 \
   --epochs 15 \
@@ -25,13 +19,13 @@ python main.py \
   --w-4 1.0 \
   --soft-gate-thr 0.7 \
   \
-  --root-dir ./RAER \
-  --train-annotation RAER/annotation/train.txt \
-  --val-annotation RAER/annotation/test.txt \
-  --test-annotation RAER/annotation/test.txt \
+  --root-dir /kaggle/input/raer-video-emotion-dataset \
+  --train-annotation /kaggle/input/raer-annot/annotation/train.txt \
+  --val-annotation /kaggle/input/raer-annot/annotation/test.txt \
+  --test-annotation /kaggle/input/raer-annot/annotation/test.txt \
   --clip-path ViT-B/32 \
-  --bounding-box-face RAER/bounding_box/face.json \
-  --bounding-box-body RAER/bounding_box/body.json \
+  --bounding-box-face /kaggle/input/raer-video-emotion-dataset/RAER/bounding_box/face.json \
+  --bounding-box-body /kaggle/input/raer-video-emotion-dataset/RAER/bounding_box/body.json \
   \
   --text-type prompt_ensemble \
   --contexts-number 12 \
@@ -42,10 +36,7 @@ python main.py \
   --num-segments 16 \
   --duration 1 \
   --image-size 224 \
-  --crop-body \
   \
-  --label-smoothing 0.02 \
-  --use-weighted-sampler \
   --lambda_mi 0.05 \
   --mi-warmup 0 \
   --mi-ramp 5 \
