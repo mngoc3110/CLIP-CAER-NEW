@@ -90,7 +90,8 @@ loss_group.add_argument("--two-head-loss", action="store_true", help="Enable 2-h
 loss_group.add_argument("--w-bin", type=float, default=1.0, help="Weight for the binary head loss.")
 loss_group.add_argument("--w-4", type=float, default=1.0, help="Weight for the 4-class head loss.")
 loss_group.add_argument("--soft-gate-thr", type=float, default=0.7, help="Threshold for the soft-gate inference.")
-
+exp_group.add_argument("--reset-epoch", action="store_true",
+                       help="When resuming, ignore checkpoint epoch and start from 0 (recommended for stage2).")
 # --- Model & Input ---
 model_group = parser.add_argument_group("Model & Input", "Model architecture and input handling")
 model_group.add_argument(
