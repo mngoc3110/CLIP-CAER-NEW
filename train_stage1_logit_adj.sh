@@ -1,15 +1,16 @@
 #!/bin/bash
-# STAGE 1: Resume from checkpoint and apply Logit Adjustment.
-# NOTE: Please replace the placeholder path for --eval-checkpoint.
+set -e
+
+# ====== CHANGE THIS ======
+RESUME_CKPT="/kaggle/input/clip-caer-new-v1/CLIP-CAER-NEW-V1/model_best.pth"
+# =========================
 
 python main.py \
   --mode train \
-  --eval-checkpoint "/PATH/TO/YOUR/model_best.pth" \
-  --exper-name stage1_logit_adj_from_e15 \
-  --logit-adj \
-  --logit-adj-tau 1.0 \
+  --resume-from "${RESUME_CKPT}" \
+  --exper-name stage1_resume_logitAdj_tau05 \
   --gpu 0 \
-  --epochs 30 \
+  --epochs 50 \
   --batch-size 8 \
   --optimizer AdamW \
   --lr 1e-4 \
@@ -45,6 +46,10 @@ python main.py \
   --mi-ramp 15 \
   --slerp-weight 0.0 \
   --temperature 0.5 \
+  --label-smoothing 0.02 \
   --use-amp \
+  --use-weighted-sampler \
   --crop-body \
-  --grad-clip 1.0
+  --grad-clip 1.0 \
+  --logit-adj \
+  --logit-adj-tau 0.5
