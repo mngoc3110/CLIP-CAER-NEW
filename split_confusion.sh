@@ -25,11 +25,11 @@ python main.py \
   --w-4 1.0 \
   --soft-gate-thr 0.7 \
   \
-  --lambda-mi 0.03 \
+  --lambda_mi 0.03 \
   --mi-warmup 16 \
   --mi-ramp 3 \
   \
-  --lambda-dc 0.05 \
+  --lambda_dc 0.05 \
   --dc-warmup 16 \
   --dc-ramp 3 \
   \
