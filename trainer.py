@@ -1,5 +1,7 @@
-import os
+# trainer.py
 import logging
+import os
+
 import numpy as np
 import torch
 import torch.nn.functional as F
@@ -10,20 +12,12 @@ from utils.utils import AverageMeter, ProgressMeter, get_loss_weight
 
 
 class Trainer:
-    """
-    Trainer with:
-    - Stage-2 2-head loss (binary + 4-class)
-    - Optional MI / DC
-    - Correct UAR computation (5-class)
-    """
-
-    CONFUSION_ID = 2  # RAER label
+    """Encapsulates the training and validation logic."""
 
     def __init__(
         self,
         model,
-        criterion_bin,     # Binary loss (CE or Focal)
-        criterion4,        # 4-class loss (LSR2 or CE)
+        criterion,
         optimizer,
         scheduler,
         device,
@@ -32,124 +26,208 @@ class Trainer:
         lambda_mi=0.0,
         dc_criterion=None,
         lambda_dc=0.0,
-        w_bin=1.0,
-        w_4=1.0,
-        soft_gate_thr=0.7,
+        class_priors=None,
+        logit_adj_tau=1.0,
+        mi_warmup=0,
+        mi_ramp=0,
+        dc_warmup=0,
+        dc_ramp=0,
         use_amp=False,
         grad_clip=1.0,
+        two_head_loss=False,
+        w_bin=1.0,
+        w_4=1.0,
+        soft_gate_thr=0.7
     ):
         self.model = model
-        self.criterion_bin = criterion_bin
-        self.criterion4 = criterion4
+        self.criterion = criterion
         self.optimizer = optimizer
         self.scheduler = scheduler
         self.device = device
         self.log_txt_path = log_txt_path
 
-        self.mi_criterion = mi_criterion
-        self.lambda_mi = lambda_mi
-        self.dc_criterion = dc_criterion
-        self.lambda_dc = lambda_dc
+        self.print_freq = 10
 
+        # Loss & Imbalance
+        self.two_head_loss = two_head_loss
         self.w_bin = w_bin
         self.w_4 = w_4
         self.soft_gate_thr = soft_gate_thr
+        self.CONFUSION_ID = 2  # As specified in the guide
 
-        self.use_amp = use_amp
-        self.grad_clip = grad_clip
-        self.scaler = torch.cuda.amp.GradScaler() if use_amp else None
+        # MI / DC
+        self.mi_criterion = mi_criterion
+        self.lambda_mi = float(lambda_mi) if lambda_mi is not None else 0.0
+        self.dc_criterion = dc_criterion
+        self.lambda_dc = float(lambda_dc) if lambda_dc is not None else 0.0
 
-        self.print_freq = 10
-        os.makedirs("debug_predictions", exist_ok=True)
+        self.mi_warmup = int(mi_warmup)
+        self.mi_ramp = int(mi_ramp)
+        self.dc_warmup = int(dc_warmup)
+        self.dc_ramp = int(dc_ramp)
 
-    def _reduce_ensemble(self, text_feat):
+        # Logit adjustment
+        self.logit_adj_tau = float(logit_adj_tau)
+        self.class_priors = None
+        if class_priors is not None:
+            if not torch.is_tensor(class_priors):
+                class_priors = torch.tensor(class_priors, dtype=torch.float32)
+            class_priors = class_priors.float()
+            if class_priors.sum().item() > 1.0 + 1e-6:
+                class_priors = class_priors / (class_priors.sum() + 1e-12)
+            self.class_priors = class_priors.view(1, -1)
+
+        # AMP
+        self.use_amp = bool(use_amp)
+        self.grad_clip = float(grad_clip)
+        self._amp_device = "cuda" if (torch.cuda.is_available() and str(self.device).startswith("cuda")) else "cpu"
+        self.scaler = torch.cuda.amp.GradScaler() if self.use_amp and self._amp_device == "cuda" else None
+
+        # Debug prediction images
+        self.debug_predictions_path = "debug_predictions"
+        os.makedirs(self.debug_predictions_path, exist_ok=True)
+
+    def _save_debug_image(self, tensor, prediction, target, epoch_str, batch_idx, img_idx):
+        mean = torch.tensor([0.485, 0.456, 0.406]).view(3, 1, 1)
+        std = torch.tensor([0.229, 0.224, 0.225]).view(3, 1, 1)
+        tensor = tensor * std + mean
+        tensor = torch.clamp(tensor, 0, 1)
+        epoch_debug_path = os.path.join(self.debug_predictions_path, f"epoch_{epoch_str}")
+        os.makedirs(epoch_debug_path, exist_ok=True)
+        filename = f"batch_{batch_idx}_img_{img_idx}_pred_{prediction}_true_{target}.png"
+        filepath = os.path.join(epoch_debug_path, filename)
+        torchvision.utils.save_image(tensor, filepath)
+
+    def _maybe_process_ensemble_text_features(self, learnable_text_features):
+        processed = learnable_text_features
         if hasattr(self.model, "is_ensemble") and self.model.is_ensemble:
-            C, P = self.model.num_classes, self.model.num_prompts_per_class
-            return text_feat.view(C, P, -1).mean(dim=1)
-        return text_feat
+            num_classes = int(self.model.num_classes)
+            num_prompts_per_class = int(self.model.num_prompts_per_class)
+            processed = learnable_text_features.view(num_classes, num_prompts_per_class, -1).mean(dim=1)
+        return processed
 
-    def _run_one_epoch(self, loader, epoch, train=True):
-        self.model.train() if train else self.model.eval()
-        prefix = f"{'Train' if train else 'Valid'} Epoch [{epoch}]"
+    def _apply_logit_adjustment(self, output):
+        if self.class_priors is None:
+            return output
+        priors = self.class_priors.to(output.device)
+        return output - self.logit_adj_tau * torch.log(priors + 1e-12)
 
-        loss_meter = AverageMeter("Loss", ":.4e")
+    def _run_one_epoch(self, loader, epoch_str, is_train=True):
+        prefix = f"Train Epoch: [{epoch_str}]" if is_train else f"Valid Epoch: [{epoch_str}]"
+        if is_train: self.model.train()
+        else: self.model.eval()
+
+        losses, mi_losses, dc_losses = AverageMeter("Loss", ":.4e"), AverageMeter("MI Loss", ":.4e"), AverageMeter("DC Loss", ":.4e")
         war_meter = AverageMeter("WAR", ":6.2f")
+        meters = [losses, war_meter]
+        if self.mi_criterion: meters.insert(1, mi_losses)
+        if self.dc_criterion: meters.insert(2, dc_losses)
+        progress = ProgressMeter(len(loader), meters, prefix=prefix, log_txt_path=self.log_txt_path)
 
         all_preds, all_targets = [], []
+        context = torch.enable_grad() if is_train else torch.no_grad()
+        
+        with context:
+            for i, (images_face, images_body, target) in enumerate(loader):
+                images_face = images_face.to(self.device, non_blocking=True)
+                images_body = images_body.to(self.device, non_blocking=True)
+                target = target.to(self.device, non_blocking=True)
 
-        ctx = torch.enable_grad() if train else torch.no_grad()
-        with ctx:
-            for i, (img_f, img_b, target) in enumerate(loader):
-                img_f = img_f.to(self.device)
-                img_b = img_b.to(self.device)
-                target = target.to(self.device)
+                with torch.cuda.amp.autocast(enabled=self.use_amp and self.scaler is not None):
+                    output, logits_bin, logits_4, learnable_text_features, hand_crafted_text_features = self.model(images_face, images_body)
+                    
+                    if self.two_head_loss:
+                        # --- Stage 2: 2-Head Loss Calculation ---
+                        target_bin = (target == self.CONFUSION_ID).long()
+                        mask_non_conf = (target != self.CONFUSION_ID)
+                        
+                        loss_bin = self.criterion(logits_bin, target_bin)
+                        
+                        # Only compute 4-class loss for non-confusion samples
+                        if mask_non_conf.sum() > 0:
+                            target_4 = target[mask_non_conf]
+                            # Map original labels (0, 1, 3, 4) to new (0, 1, 2, 3)
+                            target_4 = torch.where(target_4 > self.CONFUSION_ID, target_4 - 1, target_4)
+                            loss_4 = self.criterion(logits_4[mask_non_conf], target_4)
+                        else:
+                            loss_4 = torch.tensor(0.0, device=self.device) # No non-confusion samples in batch
 
-                with torch.cuda.amp.autocast(enabled=self.use_amp):
-                    out5, log_bin, log4, txt_feat, hc_feat = self.model(img_f, img_b)
-
-                    # ===== Binary =====
-                    tgt_bin = (target == self.CONFUSION_ID).long()
-                    loss_bin = self.criterion_bin(log_bin, tgt_bin)
-
-                    # ===== 4-class =====
-                    mask = target != self.CONFUSION_ID
-                    if mask.sum() > 0:
-                        tgt4 = target[mask]
-                        tgt4 = torch.where(tgt4 > self.CONFUSION_ID, tgt4 - 1, tgt4)
-                        loss4 = self.criterion4(log4[mask], tgt4)
+                        classification_loss = self.w_bin * loss_bin + self.w_4 * loss_4
                     else:
-                        loss4 = torch.tensor(0.0, device=self.device)
+                        # --- Original 5-class loss ---
+                        if is_train: # Apply logit adjustment only during training
+                            output = self._apply_logit_adjustment(output)
+                        classification_loss = self.criterion(output, target)
 
-                    loss = self.w_bin * loss_bin + self.w_4 * loss4
+                    loss = classification_loss
+                    # MI/DC only in training
+                    if is_train:
+                        processed_learnable = self._maybe_process_ensemble_text_features(learnable_text_features)
+                        if self.mi_criterion and self.lambda_mi > 0:
+                            mi_weight = get_loss_weight(int(epoch_str), self.mi_warmup, self.mi_ramp, self.lambda_mi)
+                            mi_loss = self.mi_criterion(processed_learnable, hand_crafted_text_features)
+                            loss += mi_weight * mi_loss
+                            mi_losses.update(mi_loss.item(), target.size(0))
+                        if self.dc_criterion and self.lambda_dc > 0:
+                            dc_weight = get_loss_weight(int(epoch_str), self.dc_warmup, self.dc_ramp, self.lambda_dc)
+                            dc_loss = self.dc_criterion(processed_learnable)
+                            loss += dc_weight * dc_loss
+                            dc_losses.update(dc_loss.item(), target.size(0))
 
-                    # ===== MI / DC =====
-                    if train and self.mi_criterion:
-                        txt_red = self._reduce_ensemble(txt_feat)
-                        loss += self.lambda_mi * self.mi_criterion(txt_red, hc_feat)
-                    if train and self.dc_criterion:
-                        txt_red = self._reduce_ensemble(txt_feat)
-                        loss += self.lambda_dc * self.dc_criterion(txt_red)
-
-                if train:
-                    self.optimizer.zero_grad()
+                # Backprop
+                if is_train:
+                    self.optimizer.zero_grad(set_to_none=True)
                     if self.scaler:
                         self.scaler.scale(loss).backward()
-                        self.scaler.unscale_(self.optimizer)
-                        torch.nn.utils.clip_grad_norm_(self.model.parameters(), self.grad_clip)
+                        if self.grad_clip > 0:
+                            self.scaler.unscale_(self.optimizer)
+                            torch.nn.utils.clip_grad_norm_(self.model.parameters(), self.grad_clip)
                         self.scaler.step(self.optimizer)
                         self.scaler.update()
                     else:
                         loss.backward()
-                        torch.nn.utils.clip_grad_norm_(self.model.parameters(), self.grad_clip)
+                        if self.grad_clip > 0:
+                            torch.nn.utils.clip_grad_norm_(self.model.parameters(), self.grad_clip)
                         self.optimizer.step()
 
-                # ===== SOFT GATE =====
-                p_conf = F.softmax(log_bin, dim=1)[:, 1]
-                pred4 = log4.argmax(dim=1)
-                pred5 = torch.where(pred4 >= self.CONFUSION_ID, pred4 + 1, pred4)
-                pred5[p_conf > self.soft_gate_thr] = self.CONFUSION_ID
+                # --- Metrics ---
+                if self.two_head_loss:
+                    # Soft-gate inference for validation
+                    p_conf = F.softmax(logits_bin, dim=1)[:, 1]
+                    preds_4 = logits_4.argmax(dim=1)
+                    
+                    # Map 4-class preds (0,1,2,3) back to original labels (0,1,3,4)
+                    final_preds = torch.where(preds_4 >= self.CONFUSION_ID, preds_4 + 1, preds_4)
+                    
+                    # Apply soft gate
+                    final_preds[p_conf > self.soft_gate_thr] = self.CONFUSION_ID
+                    preds = final_preds
+                else:
+                    preds = output.argmax(dim=1)
 
-                acc = pred5.eq(target).float().mean().item() * 100
-                loss_meter.update(loss.item(), target.size(0))
-                war_meter.update(acc, target.size(0))
-
-                all_preds.append(pred5.cpu())
+                losses.update(loss.item(), target.size(0))
+                war_meter.update(preds.eq(target).sum().item() / target.size(0) * 100.0, target.size(0))
+                all_preds.append(preds.cpu())
                 all_targets.append(target.cpu())
 
                 if i % self.print_freq == 0:
-                    ProgressMeter(len(loader), [loss_meter, war_meter], prefix, self.log_txt_path).display(i)
+                    progress.display(i)
 
-        # ===== METRICS =====
-        preds = torch.cat(all_preds)
-        targs = torch.cat(all_targets)
-        cm = confusion_matrix(targs.numpy(), preds.numpy(), labels=np.arange(5))
-        recall = cm.diagonal() / (cm.sum(axis=1) + 1e-6)
-        uar = np.mean(recall) * 100
+        # Epoch-level metrics
+        all_preds, all_targets = torch.cat(all_preds), torch.cat(all_targets)
+        cm = confusion_matrix(all_targets.numpy(), all_preds.numpy(), labels=np.arange(5))
+        war = war_meter.avg
+        class_acc = cm.diagonal() / (cm.sum(axis=1) + 1e-6)
+        uar = np.nanmean(class_acc[~np.isnan(class_acc)]) * 100
 
-        return war_meter.avg, uar, loss_meter.avg, cm
+        logging.info(f"{prefix} * WAR: {war:.3f} | UAR: {uar:.3f}")
+        with open(self.log_txt_path, "a") as f:
+            f.write(f"Current WAR: {war:.3f}\n")
+            f.write(f"Current UAR: {uar:.3f}\n")
+        return war, uar, losses.avg, cm
 
-    def train_epoch(self, loader, epoch):
-        return self._run_one_epoch(loader, epoch, train=True)
+    def train_epoch(self, train_loader, epoch_num):
+        return self._run_one_epoch(train_loader, str(epoch_num), is_train=True)
 
-    def validate(self, loader, epoch):
-        return self._run_one_epoch(loader, epoch, train=False)
+    def validate(self, val_loader, epoch_num_str="Final"):
+        return self._run_one_epoch(val_loader, str(epoch_num_str), is_train=False)
