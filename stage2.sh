@@ -9,7 +9,7 @@ python main.py \
   --resume-from "${RESUME_CKPT}" \
   --exper-name stage2_sampler_LSR2 \
   --gpu 0 \
-  --epochs 8 \
+  --epochs 50 \
   --batch-size 8 \
   --optimizer AdamW \
   --lr 1e-4 \
