@@ -8,7 +8,7 @@ set -e
 # 3. Delayed MI/DC loss warmup to start after epoch 16.
 
 # NOTE: Please replace the placeholder path for --resume-from.
-RESUME_CKPT="/PATH/TO/YOUR/model_best.pth"
+RESUME_CKPT="/kaggle/input/clip-caer-new-v1/CLIP-CAER-NEW-V1/model_best.pth"
 
 python main.py \
   --mode train \
