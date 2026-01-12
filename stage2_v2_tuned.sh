@@ -31,13 +31,13 @@ python main.py \
   --w-4 1.0 \
   --soft-gate-thr 0.5 \
   \
-  --root-dir ./RAER \
-  --train-annotation RAER/annotation/train.txt \
-  --val-annotation RAER/annotation/test.txt \
-  --test-annotation RAER/annotation/test.txt \
+  --root-dir /kaggle/input/raer-video-emotion-dataset \
+  --train-annotation /kaggle/input/raer-video-emotion-dataset/RAER/annotation/train.txt \
+  --val-annotation /kaggle/input/raer-video-emotion-dataset/RAER/annotation/test.txt \
+  --test-annotation /kaggle/input/raer-video-emotion-dataset/RAER/annotation/test.txt \
   --clip-path ViT-B/32 \
-  --bounding-box-face RAER/bounding_box/face.json \
-  --bounding-box-body RAER/bounding_box/body.json \
+  --bounding-box-face /kaggle/input/raer-video-emotion-dataset/RAER/bounding_box/face.json \
+  --bounding-box-body /kaggle/input/raer-video-emotion-dataset/RAER/bounding_box/body.json \
   \
   --text-type prompt_ensemble \
   --contexts-number 12 \
