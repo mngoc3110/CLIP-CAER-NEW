@@ -170,7 +170,7 @@ def maybe_resume_training(args, model, optimizer, scheduler):
 
     ckpt_path = args.resume_from
     print(f"=> Resuming training from: {ckpt_path}")
-    ckpt = torch.load(ckpt_path, map_location=args.device)
+    ckpt = torch.load(ckpt_path, map_location=args.device, weights_only=False)
 
     # model
     if "state_dict" in ckpt:
@@ -345,7 +345,7 @@ def run_training(args: argparse.Namespace) -> None:
 
     # Final evaluation with best model
     print("=> Final evaluation on test set...")
-    ckpt = torch.load(best_checkpoint_path, map_location=args.device)
+    ckpt = torch.load(best_checkpoint_path, map_location=args.device, weights_only=False)
     model.load_state_dict(ckpt["state_dict"])
 
     computer_uar_war(
@@ -370,7 +370,7 @@ def run_eval(args: argparse.Namespace) -> None:
     if not args.eval_checkpoint:
         raise ValueError("--eval-checkpoint is required in eval mode.")
 
-    ckpt = torch.load(args.eval_checkpoint, map_location=args.device)
+    ckpt = torch.load(args.eval_checkpoint, map_location=args.device, weights_only=False)
     if isinstance(ckpt, dict) and "state_dict" in ckpt:
         model.load_state_dict(ckpt["state_dict"])
     else:
