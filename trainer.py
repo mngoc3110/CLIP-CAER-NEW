@@ -125,6 +125,9 @@ class Trainer:
         progress = ProgressMeter(len(loader), meters, prefix=prefix, log_txt_path=self.log_txt_path)
 
         all_preds, all_targets = [], []
+        # For threshold sweep in validation
+        all_p_conf, all_preds_4_raw = [], [] 
+
         context = torch.enable_grad() if is_train else torch.no_grad()
         
         with context:
@@ -191,39 +194,80 @@ class Trainer:
                         self.optimizer.step()
 
                 # --- Metrics ---
-                if self.two_head_loss:
-                    # Soft-gate inference for validation
-                    p_conf = F.softmax(logits_bin, dim=1)[:, 1]
-                    preds_4 = logits_4.argmax(dim=1)
-                    
-                    # Map 4-class preds (0,1,2,3) back to original labels (0,1,3,4)
-                    final_preds = torch.where(preds_4 >= self.CONFUSION_ID, preds_4 + 1, preds_4)
-                    
-                    # Apply soft gate
-                    final_preds[p_conf > self.soft_gate_thr] = self.CONFUSION_ID
-                    preds = final_preds
-                else:
-                    preds = output.argmax(dim=1)
-
                 losses.update(loss.item(), target.size(0))
-                war_meter.update(preds.eq(target).sum().item() / target.size(0) * 100.0, target.size(0))
-                all_preds.append(preds.cpu())
                 all_targets.append(target.cpu())
+                
+                if not is_train and self.two_head_loss:
+                    all_p_conf.append(F.softmax(logits_bin, dim=1)[:, 1].cpu())
+                    all_preds_4_raw.append(logits_4.argmax(dim=1).cpu())
+                else: # For training or original 5-class mode, use current batch predictions
+                    if self.two_head_loss: # During training, still use self.soft_gate_thr for WAR
+                        p_conf_batch = F.softmax(logits_bin, dim=1)[:, 1]
+                        preds_4_batch = logits_4.argmax(dim=1)
+                        final_preds_batch = torch.where(preds_4_batch >= self.CONFUSION_ID, preds_4_batch + 1, preds_4_batch)
+                        final_preds_batch[p_conf_batch > self.soft_gate_thr] = self.CONFUSION_ID
+                        preds_batch = final_preds_batch
+                    else:
+                        preds_batch = output.argmax(dim=1)
+                    war_meter.update(preds_batch.eq(target).sum().item() / target.size(0) * 100.0, target.size(0))
+                    all_preds.append(preds_batch.cpu())
 
                 if i % self.print_freq == 0:
                     progress.display(i)
 
         # Epoch-level metrics
-        all_preds, all_targets = torch.cat(all_preds), torch.cat(all_targets)
-        cm = confusion_matrix(all_targets.numpy(), all_preds.numpy(), labels=np.arange(5))
-        war = war_meter.avg
-        class_acc = cm.diagonal() / (cm.sum(axis=1) + 1e-6)
-        uar = np.nanmean(class_acc[~np.isnan(class_acc)]) * 100
+        all_targets_cat = torch.cat(all_targets)
+        
+        if not is_train and self.two_head_loss:
+            # --- Threshold Sweep for Validation ---
+            all_p_conf_cat = torch.cat(all_p_conf)
+            all_preds_4_raw_cat = torch.cat(all_preds_4_raw)
 
-        logging.info(f"{prefix} * WAR: {war:.3f} | UAR: {uar:.3f}")
-        with open(self.log_txt_path, "a") as f:
-            f.write(f"Current WAR: {war:.3f}\n")
-            f.write(f"Current UAR: {uar:.3f}\n")
+            threshold_range = torch.arange(0.2, 0.81, 0.05).tolist() # Sweep from 0.2 to 0.8 with 0.05 step
+            
+            best_uar_sweep = -1.0
+            optimal_thr = self.soft_gate_thr # Default to original if no better found
+            best_preds_for_cm = None
+            
+            for current_thr in threshold_range:
+                temp_final_preds = torch.where(all_preds_4_raw_cat >= self.CONFUSION_ID, all_preds_4_raw_cat + 1, all_preds_4_raw_cat)
+                temp_final_preds[all_p_conf_cat > current_thr] = self.CONFUSION_ID
+                
+                temp_cm = confusion_matrix(all_targets_cat.numpy(), temp_final_preds.numpy(), labels=np.arange(5))
+                temp_class_acc = temp_cm.diagonal() / (temp_cm.sum(axis=1) + 1e-6)
+                temp_uar = np.nanmean(temp_class_acc[~np.isnan(temp_class_acc)]) * 100
+                
+                if temp_uar > best_uar_sweep:
+                    best_uar_sweep = temp_uar
+                    optimal_thr = current_thr
+                    best_preds_for_cm = temp_final_preds
+            
+            # Use best sweep results for final metrics
+            final_preds = best_preds_for_cm
+            uar = best_uar_sweep
+            
+            # Calculate WAR using optimal threshold
+            war = final_preds.eq(all_targets_cat).sum().item() / all_targets_cat.size(0) * 100.0
+            cm = confusion_matrix(all_targets_cat.numpy(), final_preds.numpy(), labels=np.arange(5))
+            
+            logging.info(f"{prefix} * WAR: {war:.3f} | UAR: {uar:.3f} | Optimal THR: {optimal_thr:.2f}")
+            with open(self.log_txt_path, "a") as f:
+                f.write(f"Current WAR: {war:.3f}\n")
+                f.write(f"Current UAR: {uar:.3f}\n")
+                f.write(f"Optimal THR: {optimal_thr:.2f}\n")
+            
+        else: # Original 5-class mode OR training with 2-head loss
+            all_preds_cat = torch.cat(all_preds)
+            cm = confusion_matrix(all_targets_cat.numpy(), all_preds_cat.numpy(), labels=np.arange(5))
+            war = war_meter.avg
+            class_acc = cm.diagonal() / (cm.sum(axis=1) + 1e-6)
+            uar = np.nanmean(class_acc[~np.isnan(class_acc)]) * 100
+
+            logging.info(f"{prefix} * WAR: {war:.3f} | UAR: {uar:.3f}")
+            with open(self.log_txt_path, "a") as f:
+                f.write(f"Current WAR: {war:.3f}\n")
+                f.write(f"Current UAR: {uar:.3f}\n")
+
         return war, uar, losses.avg, cm
 
     def train_epoch(self, train_loader, epoch_num):
