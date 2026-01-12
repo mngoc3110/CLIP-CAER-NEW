@@ -1,6 +1,6 @@
 python main.py \
   --mode train \
-  --resume-from "kaggle/input/clip-caer-new-v1/CLIP-CAER-NEW-V1/model_best.pth" \
+  --resume-from "/kaggle/input/clip-caer-new-v1/CLIP-CAER-NEW-V1/model_best.pth" \
   --exper-name stage2_conf_split_softgate \
   --gpu 0 \
   --epochs 15 \
