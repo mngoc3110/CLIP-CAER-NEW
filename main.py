@@ -65,6 +65,7 @@ train_group.add_argument('--batch-size', type=int, default=8, help='Batch size f
 train_group.add_argument('--print-freq', type=int, default=10, help='Frequency of printing training logs.')
 train_group.add_argument('--use-amp', action='store_true', help='Use Automatic Mixed Precision.')
 train_group.add_argument('--grad-clip', type=float, default=1.0, help='Gradient clipping value.')
+train_group.add_argument('--resume', type=str, default=None, help='Path to a checkpoint file to resume training from.')
 
 # --- Optimizer & Learning Rate ---
 optim_group = parser.add_argument_group('Optimizer & LR', 'Hyperparameters for the optimizer and scheduler')
@@ -174,7 +175,7 @@ def run_training(args: argparse.Namespace) -> None:
     best_val_uar = 0.0
     best_val_war = 0.0
     start_epoch = 0
-    
+
     # Build model
     print("=> Building model...")
     class_names, input_text = get_class_info(args)
@@ -182,19 +183,13 @@ def run_training(args: argparse.Namespace) -> None:
     model = model.to(args.device)
     print("=> Model built and moved to device successfully.")
 
-    # Load data
-    print("=> Building dataloaders...")
-    train_loader, val_loader, test_loader = build_dataloaders(args)
-    print("=> Dataloaders built successfully.")
-
-    # Loss and optimizer
+    # Loss and optimizer (defined before potential checkpoint loading)
     class_counts = get_class_counts(args.train_annotation)
     
     if args.label_smoothing > 0:
         criterion = LSR2(e=args.label_smoothing, label_mode='class_descriptor').to(args.device)
     elif args.class_balanced_loss:
         print("=> Using FocalLoss as the class-balanced loss.")
-        # Using Focal Loss. Alpha can be tuned, 0.25 is a common starting point.
         criterion = FocalLoss(alpha=0.25, gamma=2).to(args.device)
     else:
         criterion = nn.CrossEntropyLoss().to(args.device)
@@ -208,8 +203,7 @@ def run_training(args: argparse.Namespace) -> None:
         class_priors = torch.tensor(class_counts, dtype=torch.float) / sum(class_counts)
         class_priors = class_priors.to(args.device)
 
-    recorder = RecorderMeter(args.epochs)
-    
+    # Prepare optimizer parameters
     optimizer_grouped_parameters = [
         {"params": model.temporal_net.parameters(), "lr": args.lr},
         {"params": model.temporal_net_body.parameters(), "lr": args.lr},
@@ -227,6 +221,28 @@ def run_training(args: argparse.Namespace) -> None:
         raise ValueError(f"Optimizer {args.optimizer} not supported.")
 
     scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer, milestones=args.milestones, gamma=args.gamma)
+    recorder = RecorderMeter(args.epochs) # Initialize recorder before loading checkpoint
+    
+    # Load checkpoint if resume argument is provided
+    if args.resume:
+        if os.path.isfile(args.resume):
+            print(f"=> Loading checkpoint '{args.resume}'")
+            checkpoint = torch.load(args.resume, map_location=args.device)
+            start_epoch = checkpoint['epoch']
+            model.load_state_dict(checkpoint['state_dict'])
+            optimizer.load_state_dict(checkpoint['optimizer'])
+            scheduler.load_state_dict(checkpoint['scheduler']) # Load scheduler state
+            recorder = checkpoint['recorder']
+            best_val_uar = checkpoint['best_acc']
+            print(f"=> Loaded checkpoint '{args.resume}' (epoch {checkpoint['epoch']})")
+        else:
+            print(f"=> No checkpoint found at '{args.resume}'. Starting training from scratch.")
+            
+    # Load data (after model and optimizer are potentially loaded)
+    print("=> Building dataloaders...")
+    train_loader, val_loader, test_loader = build_dataloaders(args)
+    print("=> Dataloaders built successfully.")
+
     trainer = Trainer(model, criterion, optimizer, scheduler, args.device, log_txt_path, 
                     mi_criterion=mi_criterion, lambda_mi=args.lambda_mi,
                     dc_criterion=dc_criterion, lambda_dc=args.lambda_dc,

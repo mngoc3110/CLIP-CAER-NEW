@@ -45,4 +45,5 @@ python main.py \
     --use-amp \
     --use-weighted-sampler \
     --crop-body \
-    --grad-clip 1.0
+    --grad-clip 1.0 \
+    --resume /kaggle/input/clip-caer-new-v1/CLIP-CAER-NEW-V1/model_best.pth
