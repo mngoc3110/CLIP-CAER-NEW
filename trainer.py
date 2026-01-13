@@ -5,7 +5,6 @@ import os
 import numpy as np
 import torch
 import torch.nn.functional as F
-import torchvision
 from sklearn.metrics import confusion_matrix
 
 from utils.utils import AverageMeter, ProgressMeter, get_loss_weight
@@ -36,9 +35,7 @@ class Trainer:
         grad_clip=1.0,
         two_head_loss=False,
         w_bin=0.5,
-        w_4=0.5,
-        sweep_range=None,
-        conf_recall_min=0.0
+        w_4=0.5
     ):
         self.model = model
         self.criterion = criterion
@@ -53,8 +50,6 @@ class Trainer:
         self.w_aux_bin = w_bin
         self.w_aux_4 = w_4
         self.CONFUSION_ID = 2
-        self.sweep_range = sweep_range if sweep_range else [0.2, 0.81, 0.05]
-        self.conf_recall_min = conf_recall_min
 
         # MI / DC
         self.mi_criterion = mi_criterion
@@ -80,40 +75,26 @@ class Trainer:
         # AMP
         self.use_amp = bool(use_amp)
         self.grad_clip = float(grad_clip)
-        self._amp_device = "cuda" if (torch.cuda.is_available() and str(self.device).startswith("cuda")) else "cpu"
-        self.scaler = torch.cuda.amp.GradScaler() if self.use_amp and self._amp_device == "cuda" else None
+        self.scaler = torch.cuda.amp.GradScaler() if self.use_amp else None
 
     def _calculate_fusion_outputs(self, logits_bin, logits_4):
-        """
-        Calculates the 5-class fused logits and probabilities using Mixture-of-Experts style fusion.
-        Handles mixed precision automatically.
-        """
-        # Store original dtype from the model output
         original_dtype = logits_bin.dtype
-
-        # Softmax often upcasts to float32 for stability. We perform calculation and cast back.
-        probs_bin = F.softmax(logits_bin, dim=1).to(original_dtype)
-        p_conf = probs_bin[:, 1]
-        p_non_conf = probs_bin[:, 0]
         
-        probs_4 = F.softmax(logits_4, dim=1).to(original_dtype)
+        probs_bin = F.softmax(logits_bin.float(), dim=1).to(original_dtype)
+        p_conf, p_non_conf = probs_bin[:, 1], probs_bin[:, 0]
         
-        batch_size = logits_bin.shape[0]
-        num_classes = 5
+        probs_4 = F.softmax(logits_4.float(), dim=1).to(original_dtype)
         
-        # Create placeholder with the correct dtype and device
+        batch_size, num_classes = logits_bin.shape[0], 5
+        
         final_probs_5 = torch.zeros(batch_size, num_classes, device=logits_bin.device, dtype=original_dtype)
         
-        # Scatter
         idx_map_4_to_5 = [i for i in range(num_classes) if i != self.CONFUSION_ID]
-        final_probs_5[:, idx_map_4_to_5] = probs_4
+        final_probs_5[:, idx_map_4_to_5] = p_non_conf.unsqueeze(1) * probs_4
         
-        # Fuse
-        fused_probs = p_non_conf.unsqueeze(1) * final_probs_5
-        fused_probs[:, self.CONFUSION_ID] += p_conf
+        final_probs_5[:, self.CONFUSION_ID] = p_conf
         
-        # Convert back to logits
-        final_logits_5 = torch.log(fused_probs + 1e-12)
+        final_logits_5 = torch.log(final_probs_5 + 1e-12)
         
         return final_logits_5
 
@@ -122,19 +103,18 @@ class Trainer:
         self.model.train(is_train)
 
         losses = AverageMeter("Loss", ":.4e")
-        war_meter = AverageMeter("WAR", ":6.2f") if is_train else None # Only for train
-        progress = ProgressMeter(len(loader), [losses, war_meter] if war_meter else [losses], prefix=prefix, log_txt_path=self.log_txt_path)
+        war_meter = AverageMeter("WAR", ":6.2f")
+        progress = ProgressMeter(len(loader), [losses, war_meter], prefix=prefix, log_txt_path=self.log_txt_path)
 
-        all_targets_cpu, all_preds_cpu = [], []
-        all_logits_bin_cpu, all_logits_4_cpu = [], [] # For sweep
+        all_preds_cpu, all_targets_cpu = [], []
 
         context = torch.enable_grad() if is_train else torch.no_grad()
         with context:
             for i, (images_face, images_body, target) in enumerate(loader):
                 images_face, images_body, target = images_face.to(self.device), images_body.to(self.device), target.to(self.device)
                 
-                with torch.cuda.amp.autocast(enabled=self.use_amp and self.scaler is not None):
-                    output_5_class_orig, logits_bin, logits_4, learnable_text_features, _ = self.model(images_face, images_body)
+                with torch.cuda.amp.autocast(enabled=self.use_amp):
+                    _, logits_bin, logits_4, learnable_text_features, _ = self.model(images_face, images_body)
                     
                     if self.two_head_loss:
                         final_logits_5 = self._calculate_fusion_outputs(logits_bin, logits_4)
@@ -148,9 +128,10 @@ class Trainer:
                                 target_4 = torch.where(target_4 > self.CONFUSION_ID, target_4 - 1, target_4)
                                 loss_aux_4 = self.criterion(logits_4[mask_non_conf], target_4)
                             else:
-                                loss_aux_4 = 0.0
+                                loss_aux_4 = torch.tensor(0.0, device=self.device)
                             loss = loss + self.w_aux_bin * loss_aux_bin + self.w_aux_4 * loss_aux_4
                     else:
+                        output_5_class_orig = self.model(images_face, images_body)[0]
                         if is_train: output_5_class_orig = self._apply_logit_adjustment(output_5_class_orig)
                         loss = self.criterion(output_5_class_orig, target)
                 
@@ -167,61 +148,29 @@ class Trainer:
                         if self.grad_clip > 0: torch.nn.utils.clip_grad_norm_(self.model.parameters(), self.grad_clip)
                         self.optimizer.step()
 
-                losses.update(loss.item(), target.size(0))
-                all_targets_cpu.append(target.cpu())
-
-                if not is_train and self.two_head_loss:
-                    all_logits_bin_cpu.append(logits_bin.cpu())
-                    all_logits_4_cpu.append(logits_4.cpu())
+                if self.two_head_loss:
+                    preds = self._calculate_fusion_outputs(logits_bin, logits_4).argmax(dim=1)
                 else:
-                    preds = (self._calculate_fusion_outputs(logits_bin, logits_4) if self.two_head_loss else output_5_class_orig).argmax(dim=1)
-                    war_meter.update(preds.eq(target).sum().item() / target.size(0) * 100.0, target.size(0))
-                    all_preds_cpu.append(preds.cpu())
+                    preds = self.model(images_face, images_body)[0].argmax(dim=1)
+
+                losses.update(loss.item(), target.size(0))
+                war_meter.update(preds.eq(target).sum().item() / target.size(0) * 100.0, target.size(0))
+                all_preds_cpu.append(preds.cpu())
+                all_targets_cpu.append(target.cpu())
 
                 if i % self.print_freq == 0: progress.display(i)
         
+        all_preds_cat = torch.cat(all_preds_cpu)
         all_targets_cat = torch.cat(all_targets_cpu)
+        cm = confusion_matrix(all_targets_cat.numpy(), all_preds_cat.numpy(), labels=np.arange(5))
+        war = war_meter.avg
+        class_acc = cm.diagonal() / (cm.sum(axis=1) + 1e-6)
+        uar = np.nanmean(class_acc[~np.isnan(class_acc)]) * 100.0
         
-        if not is_train and self.two_head_loss:
-            all_logits_bin_cat, all_logits_4_cat = torch.cat(all_logits_bin_cpu), torch.cat(all_logits_4_cpu)
-            p_conf = F.softmax(all_logits_bin_cat, dim=1)[:, 1]
-            preds_4 = all_logits_4_cat.argmax(dim=1)
-            mapped_preds_4 = torch.where(preds_4 >= self.CONFUSION_ID, preds_4 + 1, preds_4)
-
-            thresholds = np.arange(self.sweep_range[0], self.sweep_range[1], self.sweep_range[2]).tolist()
-            best_uar, optimal_thr, best_cm = -1.0, 0.5, None
-
-            for thr in thresholds:
-                final_preds_for_thr = mapped_preds_4.clone()
-                final_preds_for_thr[p_conf > thr] = self.CONFUSION_ID
-                
-                cm_thr = confusion_matrix(all_targets_cat.numpy(), final_preds_for_thr.numpy(), labels=np.arange(5))
-                class_acc_thr = cm_thr.diagonal() / (cm_thr.sum(axis=1) + 1e-6)
-                conf_recall = class_acc_thr[self.CONFUSION_ID] * 100.0
-                
-                if conf_recall < self.conf_recall_min: continue
-
-                uar_thr = np.nanmean(class_acc_thr[~np.isnan(class_acc_thr)]) * 100.0
-                if uar_thr > best_uar:
-                    best_uar, optimal_thr, best_cm = uar_thr, thr, cm_thr
-            
-            if best_cm is None: best_cm = confusion_matrix(all_targets_cat.numpy(), mapped_preds_4.numpy(), labels=np.arange(5)) # Fallback
-            
-            uar, cm = best_uar, best_cm
-            war = 100.0 * cm.diagonal().sum() / cm.sum()
-            class_recalls = 100.0 * cm.diagonal() / (cm.sum(axis=1) + 1e-6)
-
-            log_msg = f"{prefix} * WAR: {war:.2f}% | UAR: {uar:.2f}% | Optimal THR: {optimal_thr:.2f}"
-            recall_str = " | Recalls: " + " ".join([f"{r:.1f}" for r in class_recalls])
-            log_msg += recall_str
-        else:
-            all_preds_cat = torch.cat(all_preds_cpu)
-            cm = confusion_matrix(all_targets_cat.numpy(), all_preds_cat.numpy(), labels=np.arange(5))
-            war = war_meter.avg
-            class_acc = cm.diagonal() / (cm.sum(axis=1) + 1e-6)
-            uar = np.nanmean(class_acc[~np.isnan(class_acc)]) * 100.0
-            log_msg = f"{prefix} * WAR: {war:.2f}% | UAR: {uar:.2f}%"
-
+        log_msg = f"{prefix} * WAR: {war:.2f}% | UAR: {uar:.2f}%"
+        recall_str = " | Recalls: " + " ".join([f"{r*100:.1f}" for r in class_acc])
+        log_msg += recall_str
+        
         logging.info(log_msg)
         with open(self.log_txt_path, "a") as f:
             f.write(log_msg + "\n")

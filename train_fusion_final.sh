@@ -23,8 +23,8 @@ python main.py \
   \
   --text-type prompt_ensemble \
   --two-head-loss \
-  --w-bin 1.2 \
-  --w-4 1.0 \
+  --w-bin 0.5 \
+  --w-4 0.5 \
   --sweep-range 0.25 0.85 0.02 \
   --conf-recall-min 0.0 \
   \

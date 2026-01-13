@@ -18,14 +18,12 @@ def build_model(args: argparse.Namespace, input_text: list) -> torch.nn.Module:
     CLIP_model, _ = clip.load(args.clip_path, device='cpu')
 
     print("\nInput Text Prompts:")
-    # Handle the case where input_text is a list of lists for prompt ensembling
     if any(isinstance(i, list) for i in input_text):
-        for class_prompts in input_text:
-            print(f"- Class: {class_prompts}")
+        for i, class_prompts in enumerate(input_text):
+            print(f"- Class {i}: {class_prompts}")
     else:
         for text in input_text:
             print(text)
-
 
     print("\nInstantiating GenerateModel...")
     model = GenerateModel(input_text=input_text, clip_model=CLIP_model, args=args)
@@ -33,8 +31,6 @@ def build_model(args: argparse.Namespace, input_text: list) -> torch.nn.Module:
     for name, param in model.named_parameters():
         param.requires_grad = False
 
-    # Freeze CLIP image encoder if lr_image_encoder is 0
-    # Otherwise, make it trainable.
     if args.lr_image_encoder > 0:
         for name, param in model.named_parameters():
             if "image_encoder" in name:
@@ -42,6 +38,11 @@ def build_model(args: argparse.Namespace, input_text: list) -> torch.nn.Module:
 
     trainable_params_keywords = ["temporal_net", "prompt_learner", "temporal_net_body", "project_fc", "face_adapter"]
     
+    if hasattr(model, 'cls_bin'):
+        trainable_params_keywords.append('cls_bin')
+    if hasattr(model, 'cls_4'):
+        trainable_params_keywords.append('cls_4')
+
     print('\nTrainable parameters:')
     for name, param in model.named_parameters():
         if any(keyword in name for keyword in trainable_params_keywords):
@@ -53,18 +54,8 @@ def build_model(args: argparse.Namespace, input_text: list) -> torch.nn.Module:
 
 
 def get_class_info(args: argparse.Namespace) -> Tuple[list, list]:
-    """
-    根据数据集和文本类型获取 class_names 和 input_text（用于生成 CLIP 模型文本输入）。
-
-    Returns:
-        class_names: 类别名称，用于混淆矩阵等
-        input_text: 输入文本，用于传入模型
-    """
-    print(f"[DEBUG] get_class_info received args.text_type: {args.text_type}") # DEBUG PRINT
-
     if args.dataset == "RAER":
-        class_names = ['Neutrality', 'Enjoyment', 'Confusion', 'Fatigue', 'Distraction.']
-        class_names_with_context = class_names_with_context_5
+        class_names = ['Neutrality', 'Enjoyment', 'Confusion', 'Fatigue', 'Distraction']
         class_descriptor = class_descriptor_5
         ensemble_prompts = prompt_ensemble_5
     else:
@@ -72,8 +63,6 @@ def get_class_info(args: argparse.Namespace) -> Tuple[list, list]:
 
     if args.text_type == "class_names":
         input_text = class_names
-    elif args.text_type == "class_names_with_context":
-        input_text = class_names_with_context
     elif args.text_type == "class_descriptor":
         input_text = class_descriptor
     elif args.text_type == "prompt_ensemble":
@@ -81,9 +70,7 @@ def get_class_info(args: argparse.Namespace) -> Tuple[list, list]:
     else:
         raise ValueError(f"Unknown text_type: {args.text_type}")
 
-    print(f"[DEBUG] get_class_info is returning input_text of type: {type(input_text)} and length: {len(input_text)}") # DEBUG PRINT
     return class_names, input_text
-
 
 
 def build_dataloaders(args: argparse.Namespace) -> Tuple[torch.utils.data.DataLoader, torch.utils.data.DataLoader, torch.utils.data.DataLoader]: 
@@ -131,15 +118,23 @@ def build_dataloaders(args: argparse.Namespace) -> Tuple[torch.utils.data.DataLo
         class_counts = get_class_counts(train_annotation_file_path)
         class_weights = 1. / torch.tensor(class_counts, dtype=torch.float)
         
-        # Create a weight for each sample
         sample_weights = []
         with open(train_annotation_file_path, 'r') as f:
             for line in f:
-                label = int(line.strip().split()[2]) -1 # label is 1-based
-                sample_weights.append(class_weights[label])
+                try:
+                    label = int(line.strip().split()[2]) - 1
+                    if 0 <= label < len(class_weights):
+                        sample_weights.append(class_weights[label])
+                    else:
+                        print(f"Warning: Found invalid label '{label+1}' in {train_annotation_file_path}")
+                except (ValueError, IndexError):
+                    print(f"Warning: Could not parse line: {line.strip()}")
         
-        sampler = torch.utils.data.WeightedRandomSampler(sample_weights, len(sample_weights))
-        shuffle = False # Sampler and shuffle are mutually exclusive
+        if len(sample_weights) == len(train_data):
+            sampler = torch.utils.data.WeightedRandomSampler(sample_weights, len(sample_weights))
+            shuffle = False
+        else:
+            print(f"Warning: Mismatch between number of samples ({len(train_data)}) and weights ({len(sample_weights)}). Disabling sampler.")
 
     train_loader = torch.utils.data.DataLoader(
         train_data, batch_size=args.batch_size, shuffle=shuffle, sampler=sampler,
