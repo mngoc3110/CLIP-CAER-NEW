@@ -5,18 +5,14 @@ import os
 import numpy as np
 import torch
 import torch.nn.functional as F
+import torchvision
 from sklearn.metrics import confusion_matrix
 
 from utils.utils import AverageMeter, ProgressMeter, get_loss_weight
 
 
 class Trainer:
-    """
-    Trainer with:
-    - 2-head loss (Confusion vs Non-confusion)
-    - Soft-gate inference
-    - Automatic threshold sweep on VALIDATION
-    """
+    """Encapsulates the training and validation logic."""
 
     def __init__(
         self,
@@ -39,9 +35,10 @@ class Trainer:
         use_amp=False,
         grad_clip=1.0,
         two_head_loss=False,
-        w_bin=1.0,
-        w_4=1.0,
-        soft_gate_thr=0.7,
+        w_bin=0.5,
+        w_4=0.5,
+        sweep_range=None,
+        conf_recall_min=0.0
     ):
         self.model = model
         self.criterion = criterion
@@ -49,175 +46,171 @@ class Trainer:
         self.scheduler = scheduler
         self.device = device
         self.log_txt_path = log_txt_path
-
         self.print_freq = 10
 
-        # -------- 2-head config --------
+        # Loss & Imbalance
         self.two_head_loss = two_head_loss
-        self.w_bin = w_bin
-        self.w_4 = w_4
-        self.soft_gate_thr = soft_gate_thr
-        self.CONFUSION_ID = 2  # RAER: Confusion
+        self.w_aux_bin = w_bin
+        self.w_aux_4 = w_4
+        self.CONFUSION_ID = 2
+        self.sweep_range = sweep_range if sweep_range else [0.2, 0.81, 0.05]
+        self.conf_recall_min = conf_recall_min
 
-        # -------- MI / DC --------
+        # MI / DC
         self.mi_criterion = mi_criterion
-        self.lambda_mi = float(lambda_mi)
+        self.lambda_mi = float(lambda_mi) if lambda_mi is not None else 0.0
         self.dc_criterion = dc_criterion
-        self.lambda_dc = float(lambda_dc)
-
+        self.lambda_dc = float(lambda_dc) if lambda_dc is not None else 0.0
         self.mi_warmup = int(mi_warmup)
         self.mi_ramp = int(mi_ramp)
         self.dc_warmup = int(dc_warmup)
         self.dc_ramp = int(dc_ramp)
 
-        # -------- AMP --------
+        # Logit adjustment
+        self.logit_adj_tau = float(logit_adj_tau)
+        self.class_priors = None
+        if class_priors is not None:
+            if not torch.is_tensor(class_priors):
+                class_priors = torch.tensor(class_priors, dtype=torch.float32)
+            class_priors = class_priors.float()
+            if class_priors.sum().item() > 1.0 + 1e-6:
+                class_priors = class_priors / (class_priors.sum() + 1e-12)
+            self.class_priors = class_priors.view(1, -1)
+
+        # AMP
         self.use_amp = bool(use_amp)
         self.grad_clip = float(grad_clip)
-        self.scaler = torch.amp.GradScaler("cuda") if use_amp else None
+        self._amp_device = "cuda" if (torch.cuda.is_available() and str(self.device).startswith("cuda")) else "cpu"
+        self.scaler = torch.cuda.amp.GradScaler() if self.use_amp and self._amp_device == "cuda" else None
 
-    # ---------------------------------------------------
-
-    def _maybe_process_ensemble_text_features(self, learnable_text_features):
-        if hasattr(self.model, "is_ensemble") and self.model.is_ensemble:
-            C = self.model.num_classes
-            P = self.model.num_prompts_per_class
-            return learnable_text_features.view(C, P, -1).mean(dim=1)
-        return learnable_text_features
-
-    # ---------------------------------------------------
+    def _calculate_fusion_outputs(self, logits_bin, logits_4):
+        batch_size = logits_bin.shape[0]
+        num_classes = 5
+        probs_bin = F.softmax(logits_bin, dim=1)
+        p_conf = probs_bin[:, 1]
+        p_non_conf = probs_bin[:, 0]
+        probs_4 = F.softmax(logits_4, dim=1)
+        final_probs_5 = torch.zeros(batch_size, num_classes, device=self.device)
+        idx_map_4_to_5 = [i for i in range(num_classes) if i != self.CONFUSION_ID]
+        final_probs_5[:, idx_map_4_to_5] = probs_4
+        fused_probs = p_non_conf.unsqueeze(1) * final_probs_5
+        fused_probs[:, self.CONFUSION_ID] += p_conf
+        final_logits_5 = torch.log(fused_probs + 1e-12)
+        return final_logits_5
 
     def _run_one_epoch(self, loader, epoch_str, is_train=True):
-        prefix = f"Train Epoch [{epoch_str}]" if is_train else f"Valid Epoch [{epoch_str}]"
-        self.model.train() if is_train else self.model.eval()
+        prefix = f"Train Epoch: [{epoch_str}]" if is_train else f"Valid Epoch: [{epoch_str}]"
+        self.model.train(is_train)
 
         losses = AverageMeter("Loss", ":.4e")
-        war_meter = AverageMeter("WAR", ":6.2f") if is_train else None
-        progress = ProgressMeter(len(loader), [losses], prefix=prefix, log_txt_path=self.log_txt_path)
+        war_meter = AverageMeter("WAR", ":6.2f") if is_train else None # Only for train
+        progress = ProgressMeter(len(loader), [losses, war_meter] if war_meter else [losses], prefix=prefix, log_txt_path=self.log_txt_path)
 
-        all_targets = []
-        all_preds = []
-        all_logits_bin = []
-        all_logits_4 = []
+        all_targets_cpu, all_preds_cpu = [], []
+        all_logits_bin_cpu, all_logits_4_cpu = [], [] # For sweep
 
         context = torch.enable_grad() if is_train else torch.no_grad()
-
         with context:
             for i, (images_face, images_body, target) in enumerate(loader):
-                images_face = images_face.to(self.device)
-                images_body = images_body.to(self.device)
-                target = target.to(self.device)
-
-                with torch.amp.autocast("cuda", enabled=self.use_amp):
-                    output, logits_bin, logits_4, learnable_text, hand_text = self.model(
-                        images_face, images_body
-                    )
-
-                    # -------- Loss --------
+                images_face, images_body, target = images_face.to(self.device), images_body.to(self.device), target.to(self.device)
+                
+                with torch.cuda.amp.autocast(enabled=self.use_amp and self.scaler is not None):
+                    output_5_class_orig, logits_bin, logits_4, learnable_text_features, _ = self.model(images_face, images_body)
+                    
                     if self.two_head_loss:
-                        target_bin = (target == self.CONFUSION_ID).long()
-                        loss_bin = self.criterion(logits_bin, target_bin)
-
-                        mask = target != self.CONFUSION_ID
-                        if mask.sum() > 0:
-                            target_4 = target[mask]
-                            target_4 = torch.where(target_4 > self.CONFUSION_ID, target_4 - 1, target_4)
-                            loss_4 = self.criterion(logits_4[mask], target_4)
-                        else:
-                            loss_4 = torch.tensor(0.0, device=self.device)
-
-                        loss = self.w_bin * loss_bin + self.w_4 * loss_4
+                        final_logits_5 = self._calculate_fusion_outputs(logits_bin, logits_4)
+                        loss = self.criterion(final_logits_5, target)
+                        if is_train:
+                            target_bin = (target == self.CONFUSION_ID).long()
+                            loss_aux_bin = self.criterion(logits_bin, target_bin)
+                            mask_non_conf = (target != self.CONFUSION_ID)
+                            if mask_non_conf.sum() > 0:
+                                target_4 = target[mask_non_conf]
+                                target_4 = torch.where(target_4 > self.CONFUSION_ID, target_4 - 1, target_4)
+                                loss_aux_4 = self.criterion(logits_4[mask_non_conf], target_4)
+                            else:
+                                loss_aux_4 = 0.0
+                            loss = loss + self.w_aux_bin * loss_aux_bin + self.w_aux_4 * loss_aux_4
                     else:
-                        loss = self.criterion(output, target)
-
-                    # -------- MI / DC --------
-                    if is_train:
-                        proc_text = self._maybe_process_ensemble_text_features(learnable_text)
-
-                        if self.mi_criterion and self.lambda_mi > 0:
-                            w = get_loss_weight(int(epoch_str), self.mi_warmup, self.mi_ramp, self.lambda_mi)
-                            loss += w * self.mi_criterion(proc_text, hand_text)
-
-                        if self.dc_criterion and self.lambda_dc > 0:
-                            w = get_loss_weight(int(epoch_str), self.dc_warmup, self.dc_ramp, self.lambda_dc)
-                            loss += w * self.dc_criterion(proc_text)
-
-                # -------- Backprop --------
+                        if is_train: output_5_class_orig = self._apply_logit_adjustment(output_5_class_orig)
+                        loss = self.criterion(output_5_class_orig, target)
+                
                 if is_train:
                     self.optimizer.zero_grad(set_to_none=True)
-                    self.scaler.scale(loss).backward() if self.scaler else loss.backward()
-                    if self.grad_clip > 0:
-                        torch.nn.utils.clip_grad_norm_(self.model.parameters(), self.grad_clip)
-                    self.scaler.step(self.optimizer) if self.scaler else self.optimizer.step()
                     if self.scaler:
+                        self.scaler.scale(loss).backward()
+                        if self.grad_clip > 0: self.scaler.unscale_(self.optimizer)
+                        torch.nn.utils.clip_grad_norm_(self.model.parameters(), self.grad_clip)
+                        self.scaler.step(self.optimizer)
                         self.scaler.update()
+                    else:
+                        loss.backward()
+                        if self.grad_clip > 0: torch.nn.utils.clip_grad_norm_(self.model.parameters(), self.grad_clip)
+                        self.optimizer.step()
 
                 losses.update(loss.item(), target.size(0))
-                all_targets.append(target.cpu())
+                all_targets_cpu.append(target.cpu())
 
-                # -------- Predictions --------
-                if is_train:
-                    if self.two_head_loss:
-                        p_conf = F.softmax(logits_bin, dim=1)[:, 1]
-                        pred_4 = logits_4.argmax(dim=1)
-                        pred = torch.where(pred_4 >= self.CONFUSION_ID, pred_4 + 1, pred_4)
-                        pred[p_conf > self.soft_gate_thr] = self.CONFUSION_ID
-                    else:
-                        pred = output.argmax(dim=1)
-
-                    war_meter.update((pred == target).float().mean().item() * 100, target.size(0))
-                    all_preds.append(pred.cpu())
+                if not is_train and self.two_head_loss:
+                    all_logits_bin_cpu.append(logits_bin.cpu())
+                    all_logits_4_cpu.append(logits_4.cpu())
                 else:
-                    all_logits_bin.append(logits_bin.cpu())
-                    all_logits_4.append(logits_4.cpu())
+                    preds = (self._calculate_fusion_outputs(logits_bin, logits_4) if self.two_head_loss else output_5_class_orig).argmax(dim=1)
+                    war_meter.update(preds.eq(target).sum().item() / target.size(0) * 100.0, target.size(0))
+                    all_preds_cpu.append(preds.cpu())
 
-                if i % self.print_freq == 0:
-                    progress.display(i)
-
-        # =====================================================
-        # METRICS
-        # =====================================================
-        targets = torch.cat(all_targets).numpy()
-
+                if i % self.print_freq == 0: progress.display(i)
+        
+        all_targets_cat = torch.cat(all_targets_cpu)
+        
         if not is_train and self.two_head_loss:
-            logits_bin = torch.cat(all_logits_bin)
-            logits_4 = torch.cat(all_logits_4)
+            all_logits_bin_cat, all_logits_4_cat = torch.cat(all_logits_bin_cpu), torch.cat(all_logits_4_cpu)
+            p_conf = F.softmax(all_logits_bin_cat, dim=1)[:, 1]
+            preds_4 = all_logits_4_cat.argmax(dim=1)
+            mapped_preds_4 = torch.where(preds_4 >= self.CONFUSION_ID, preds_4 + 1, preds_4)
 
-            p_conf = F.softmax(logits_bin, dim=1)[:, 1]
-            pred_4 = logits_4.argmax(dim=1)
-            pred_4 = torch.where(pred_4 >= self.CONFUSION_ID, pred_4 + 1, pred_4)
+            thresholds = np.arange(self.sweep_range[0], self.sweep_range[1], self.sweep_range[2]).tolist()
+            best_uar, optimal_thr, best_cm = -1.0, 0.5, None
 
-            best_uar, best_thr, best_cm = -1, None, None
-            for thr in np.arange(0.2, 0.81, 0.05):
-                pred = pred_4.clone()
-                pred[p_conf > thr] = self.CONFUSION_ID
-                cm = confusion_matrix(targets, pred.numpy(), labels=np.arange(5))
-                acc = cm.diagonal() / (cm.sum(axis=1) + 1e-6)
-                uar = np.nanmean(acc) * 100
-                if uar > best_uar:
-                    best_uar, best_thr, best_cm = uar, thr, cm
+            for thr in thresholds:
+                final_preds_for_thr = mapped_preds_4.clone()
+                final_preds_for_thr[p_conf > thr] = self.CONFUSION_ID
+                
+                cm_thr = confusion_matrix(all_targets_cat.numpy(), final_preds_for_thr.numpy(), labels=np.arange(5))
+                class_acc_thr = cm_thr.diagonal() / (cm_thr.sum(axis=1) + 1e-6)
+                conf_recall = class_acc_thr[self.CONFUSION_ID] * 100.0
+                
+                if conf_recall < self.conf_recall_min: continue
 
-            war = best_cm.diagonal().sum() / best_cm.sum() * 100
-            uar = best_uar
+                uar_thr = np.nanmean(class_acc_thr[~np.isnan(class_acc_thr)]) * 100.0
+                if uar_thr > best_uar:
+                    best_uar, optimal_thr, best_cm = uar_thr, thr, cm_thr
+            
+            if best_cm is None: best_cm = confusion_matrix(all_targets_cat.numpy(), mapped_preds_4.numpy(), labels=np.arange(5)) # Fallback
+            
+            uar, cm = best_uar, best_cm
+            war = 100.0 * cm.diagonal().sum() / cm.sum()
+            class_recalls = 100.0 * cm.diagonal() / (cm.sum(axis=1) + 1e-6)
 
-            msg = f"{prefix} | WAR {war:.2f} | UAR {uar:.2f} | best_thr={best_thr:.2f}"
+            log_msg = f"{prefix} * WAR: {war:.2f}% | UAR: {uar:.2f}% | Optimal THR: {optimal_thr:.2f}"
+            recall_str = " | Recalls: " + " ".join([f"{r:.1f}" for r in class_recalls])
+            log_msg += recall_str
         else:
-            preds = torch.cat(all_preds).numpy()
-            cm = confusion_matrix(targets, preds, labels=np.arange(5))
+            all_preds_cat = torch.cat(all_preds_cpu)
+            cm = confusion_matrix(all_targets_cat.numpy(), all_preds_cat.numpy(), labels=np.arange(5))
             war = war_meter.avg
-            acc = cm.diagonal() / (cm.sum(axis=1) + 1e-6)
-            uar = np.nanmean(acc) * 100
-            msg = f"{prefix} | WAR {war:.2f} | UAR {uar:.2f}"
+            class_acc = cm.diagonal() / (cm.sum(axis=1) + 1e-6)
+            uar = np.nanmean(class_acc[~np.isnan(class_acc)]) * 100.0
+            log_msg = f"{prefix} * WAR: {war:.2f}% | UAR: {uar:.2f}%"
 
-        print(msg)
+        logging.info(log_msg)
         with open(self.log_txt_path, "a") as f:
-            f.write(msg + "\n")
-
+            f.write(log_msg + "\n")
+        
         return war, uar, losses.avg, cm
 
-    # ---------------------------------------------------
+    def train_epoch(self, train_loader, epoch_num):
+        return self._run_one_epoch(train_loader, str(epoch_num), is_train=True)
 
-    def train_epoch(self, loader, epoch):
-        return self._run_one_epoch(loader, str(epoch), is_train=True)
-
-    def validate(self, loader, epoch):
-        return self._run_one_epoch(loader, str(epoch), is_train=False)
+    def validate(self, val_loader, epoch_num_str="Final"):
+        return self._run_one_epoch(val_loader, str(epoch_num_str), is_train=False)

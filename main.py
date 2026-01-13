@@ -87,9 +87,11 @@ loss_group.add_argument("--logit-adj-tau", type=float, default=0.5, help="Tau fo
 
 # --- 2-Head Loss & Inference ---
 loss_group.add_argument("--two-head-loss", action="store_true", help="Enable 2-head loss for Confusion splitting.")
-loss_group.add_argument("--w-bin", type=float, default=1.0, help="Weight for the binary head loss.")
-loss_group.add_argument("--w-4", type=float, default=1.0, help="Weight for the 4-class head loss.")
-loss_group.add_argument("--soft-gate-thr", type=float, default=0.7, help="Threshold for the soft-gate inference.")
+loss_group.add_argument("--w-bin", type=float, default=0.5, help="Weight for the binary auxiliary loss.")
+loss_group.add_argument("--w-4", type=float, default=0.5, help="Weight for the 4-class auxiliary loss.")
+loss_group.add_argument("--sweep-range", type=float, nargs=3, default=[0.2, 0.81, 0.05], help="Sweep range for soft-gate threshold (start, stop, step).")
+loss_group.add_argument("--conf-recall-min", type=float, default=0.0, help="Minimum confusion recall to consider a threshold as best.")
+
 exp_group.add_argument("--reset-epoch", action="store_true",
                        help="When resuming, ignore checkpoint epoch and start from 0 (recommended for stage2).")
 # --- Model & Input ---
@@ -208,9 +210,10 @@ def maybe_resume_training(args, model, optimizer, scheduler):
             best_val_uar = float(ckpt["best_acc"])
         except Exception:
             pass
-
-    # NOTE: MultiStepLR stores state in optimizer, so usually ok.
-    # If you want, can also load scheduler state if you save it.
+    
+    if args.reset_epoch:
+        print(f"=> [--reset-epoch] was set. Resetting start_epoch to 0 from {start_epoch}.")
+        start_epoch = 0
 
     return start_epoch, best_val_uar
 
@@ -234,6 +237,11 @@ def run_training(args: argparse.Namespace) -> None:
     # Your builders.py should return (train_loader, val_loader, test_loader)
     train_loader, val_loader, test_loader = build_dataloaders(args)
     print("=> Dataloaders built.")
+
+    # Print validation set stats
+    val_class_counts = get_class_counts(args.val_annotation)
+    print(f"=> Validation set class counts: {val_class_counts}")
+
 
     # ---------------- Loss ----------------
     # class_counts must be from TRAIN annotation
@@ -286,7 +294,6 @@ def run_training(args: argparse.Namespace) -> None:
         optimizer, milestones=args.milestones, gamma=args.gamma
     )
 
-    print(f"[DEBUG] Passing to Trainer: two_head_loss={args.two_head_loss}")
     trainer = Trainer(
         model, criterion, optimizer, scheduler, args.device, log_txt_path,
         mi_criterion=mi_criterion, lambda_mi=args.lambda_mi,
@@ -296,7 +303,7 @@ def run_training(args: argparse.Namespace) -> None:
         dc_warmup=args.dc_warmup, dc_ramp=args.dc_ramp,
         use_amp=args.use_amp, grad_clip=args.grad_clip,
         two_head_loss=args.two_head_loss, w_bin=args.w_bin, w_4=args.w_4,
-        soft_gate_thr=args.soft_gate_thr
+        sweep_range=args.sweep_range, conf_recall_min=args.conf_recall_min
     )
 
     # Resume if requested
@@ -349,14 +356,16 @@ def run_training(args: argparse.Namespace) -> None:
         recorder.plot_curve(log_curve_path)
 
         log_msg = (
-            f"\n--- Epoch {epoch} Summary ---\n"
+            f"\n--- Epoch {epoch} Summary ---
+"
             f"Train WAR: {train_war:.2f}% | Train UAR: {train_uar:.2f}%\n"
             f"Valid WAR: {val_war:.2f}% | Valid UAR: {val_uar:.2f}%\n"
             f"Best Valid UAR so far: {best_val_uar:.2f}%\n"
             f"Time: {epoch_time:.2f}s\n"
             f"Train Confusion Matrix:\n{train_cm}\n"
             f"Validation Confusion Matrix:\n{val_cm}\n"
-            f"--- End of Epoch {epoch} ---\n"
+            f"--- End of Epoch {epoch} ---
+"
         )
         print(log_msg)
         with open(log_txt_path, "a") as f:
