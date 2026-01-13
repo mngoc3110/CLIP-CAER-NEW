@@ -16,6 +16,22 @@ class_names_with_context_5 = [
     "A student shows distraction and is not focused in a classroom."
 ]
 
+class_descriptor_5_only_face = [
+    "A student has a neutral face with relaxed mouth, open eyes, and calm eyebrows.",
+    "A student looks happy with a slight smile, bright eyes, and relaxed eyebrows.",
+    "A student looks confused with furrowed eyebrows, a puzzled look, and slightly open mouth.",
+    "A student looks tired with drooping eyelids, frequent yawning, and a sleepy face.",
+    "A student looks distracted with unfocused eyes and a wandering gaze away from the lesson."
+]
+
+class_descriptor_5_only_body = [
+    "A student sits still with an upright posture and hands on the desk, showing a neutral learning state.",
+    "A student leans slightly forward with an open, engaged posture, showing enjoyment in learning.",
+    "A student tilts the head and leans in, hand on chin, showing confusion while trying to understand.",
+    "A student slouches with shoulders dropped and head lowered, showing fatigue during class.",
+    "A student shifts around, turns away from the desk, or looks sideways, showing distraction and low focus."
+]
+
 class_descriptor_5 = [
     "A student looks neutral and calm in class, with a relaxed face and steady gaze, quietly watching the lecture or reading notes.",
     "A student shows enjoyment while learning, with a gentle smile and bright eyes, appearing engaged and interested in the lesson.",
