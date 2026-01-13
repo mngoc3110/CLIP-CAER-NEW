@@ -35,7 +35,7 @@ python main.py \
   --bounding-box-face /kaggle/input/raer-video-emotion-dataset/RAER/bounding_box/face.json \
   --bounding-box-body /kaggle/input/raer-video-emotion-dataset/RAER/bounding_box/body.json \
   \
-  --use-weighted-sampler False \
+
   --lambda_mi 0.03 \
   --mi-warmup 2 \
   --mi-ramp 5 \
