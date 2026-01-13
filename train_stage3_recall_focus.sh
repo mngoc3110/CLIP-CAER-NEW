@@ -29,7 +29,7 @@ python main.py \
   --sweep-range 0.05 0.21 0.05 \
   --conf-recall-min 40.0 \
   \
-  --root-dir ./RAER \
+  --root-dir . \
   --train-annotation /kaggle/input/raer-annot/annotation/train.txt \
   --val-annotation /kaggle/input/raer-annot/annotation/test.txt \
   --test-annotation /kaggle/input/raer-annot/annotation/test.txt \
