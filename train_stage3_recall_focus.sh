@@ -33,6 +33,8 @@ python main.py \
   --train-annotation /kaggle/input/raer-annot/annotation/train.txt \
   --val-annotation /kaggle/input/raer-annot/annotation/test.txt \
   --test-annotation /kaggle/input/raer-annot/annotation/test.txt \
+  --bounding-box-face /kaggle/input/raer-video-emotion-dataset/RAER/bounding_box/face.json \
+  --bounding-box-body /kaggle/input/raer-video-emotion-dataset/RAER/bounding_box/body.json \
   --text-type prompt_ensemble \
   --clip-path ViT-B/32 \
   \
