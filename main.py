@@ -363,8 +363,7 @@ def run_training(args: argparse.Namespace) -> None:
             f"Time: {epoch_time:.2f}s\n"
             f"Train Confusion Matrix:\n{train_cm}\n"
             f"Validation Confusion Matrix:\n{val_cm}\n"
-            f"--- End of Epoch {epoch} ---
-"
+            f"--- End of Epoch {epoch} ---"
         )
         print(log_msg)
         with open(log_txt_path, "a") as f:
