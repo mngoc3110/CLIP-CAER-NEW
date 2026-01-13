@@ -86,34 +86,33 @@ class Trainer:
     def _calculate_fusion_outputs(self, logits_bin, logits_4):
         """
         Calculates the 5-class fused logits and probabilities using Mixture-of-Experts style fusion.
+        Handles mixed precision automatically.
         """
+        # Store original dtype from the model output
+        original_dtype = logits_bin.dtype
+
+        # Softmax often upcasts to float32 for stability. We perform calculation and cast back.
+        probs_bin = F.softmax(logits_bin, dim=1).to(original_dtype)
+        p_conf = probs_bin[:, 1]
+        p_non_conf = probs_bin[:, 0]
+        
+        probs_4 = F.softmax(logits_4, dim=1).to(original_dtype)
+        
         batch_size = logits_bin.shape[0]
         num_classes = 5
         
-        # --- Get probabilities from heads ---
-        probs_bin = F.softmax(logits_bin, dim=1)
-        p_conf = probs_bin[:, 1]  # P(is_confusion)
-        p_non_conf = probs_bin[:, 0] # P(is_not_confusion)
+        # Create placeholder with the correct dtype and device
+        final_probs_5 = torch.zeros(batch_size, num_classes, device=logits_bin.device, dtype=original_dtype)
         
-        probs_4 = F.softmax(logits_4, dim=1)
-        
-        # --- Combine into a 5-class probability distribution ---
-        # 1. Create a placeholder with the same dtype and device as the input logits to be AMP-compatible
-        final_probs_5 = torch.zeros(batch_size, num_classes, device=logits_4.device, dtype=logits_4.dtype)
-        
-        # 2. Scatter the 4-class probabilities into the 5-class tensor
-        # Create an index mapping: 0->0, 1->1, 2->3, 3->4
+        # Scatter
         idx_map_4_to_5 = [i for i in range(num_classes) if i != self.CONFUSION_ID]
         final_probs_5[:, idx_map_4_to_5] = probs_4
         
-        # 3. Fuse based on the binary head's prediction
-        # Weight the 4-class distribution by P(is_not_confusion)
+        # Fuse
         fused_probs = p_non_conf.unsqueeze(1) * final_probs_5
-        
-        # Add the probability for the 'Confusion' class, weighted by P(is_confusion)
         fused_probs[:, self.CONFUSION_ID] += p_conf
         
-        # --- Convert fused probabilities back to logits for CrossEntropyLoss ---
+        # Convert back to logits
         final_logits_5 = torch.log(fused_probs + 1e-12)
         
         return final_logits_5
