@@ -30,9 +30,10 @@ python main.py \
   --conf-recall-min 40.0 \
   \
   --root-dir ./RAER \
-  --train-annotation RAER/annotation/train.txt \
-  --val-annotation RAER/annotation/test.txt \
-  --test-annotation RAER/annotation/test.txt \
+  --train-annotation /kaggle/input/raer-annot/annotation/train.txt \
+  --val-annotation /kaggle/input/raer-annot/annotation/test.txt \
+  --test-annotation /kaggle/input/raer-annot/annotation/test.txt \
+  --text-type prompt_ensemble \
   --clip-path ViT-B/32 \
   \
   --use-weighted-sampler \
