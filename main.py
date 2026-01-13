@@ -356,8 +356,7 @@ def run_training(args: argparse.Namespace) -> None:
         recorder.plot_curve(log_curve_path)
 
         log_msg = (
-            f"\n--- Epoch {epoch} Summary ---
-"
+            f"\n--- Epoch {epoch} Summary ---"
             f"Train WAR: {train_war:.2f}% | Train UAR: {train_uar:.2f}%\n"
             f"Valid WAR: {val_war:.2f}% | Valid UAR: {val_uar:.2f}%\n"
             f"Best Valid UAR so far: {best_val_uar:.2f}%\n"
