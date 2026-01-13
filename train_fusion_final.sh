@@ -21,6 +21,7 @@ python main.py \
   --lr-prompt-learner 1e-4 \
   --weight-decay 0.0001 \
   \
+  --text-type prompt_ensemble \
   --two-head-loss \
   --w-bin 1.2 \
   --w-4 1.0 \
@@ -35,7 +36,6 @@ python main.py \
   --bounding-box-face /kaggle/input/raer-video-emotion-dataset/RAER/bounding_box/face.json \
   --bounding-box-body /kaggle/input/raer-video-emotion-dataset/RAER/bounding_box/body.json \
   \
-
   --lambda_mi 0.03 \
   --mi-warmup 2 \
   --mi-ramp 5 \
