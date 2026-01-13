@@ -60,6 +60,8 @@ def get_class_info(args: argparse.Namespace) -> Tuple[list, list]:
         class_names: 类别名称，用于混淆矩阵等
         input_text: 输入文本，用于传入模型
     """
+    print(f"[DEBUG] get_class_info received args.text_type: {args.text_type}") # DEBUG PRINT
+
     if args.dataset == "RAER":
         class_names = ['Neutrality', 'Enjoyment', 'Confusion', 'Fatigue', 'Distraction.']
         class_names_with_context = class_names_with_context_5
@@ -79,6 +81,7 @@ def get_class_info(args: argparse.Namespace) -> Tuple[list, list]:
     else:
         raise ValueError(f"Unknown text_type: {args.text_type}")
 
+    print(f"[DEBUG] get_class_info is returning input_text of type: {type(input_text)} and length: {len(input_text)}") # DEBUG PRINT
     return class_names, input_text
 
 

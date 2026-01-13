@@ -56,7 +56,6 @@ python main.py \
   --duration 1 \
   --image-size 224 \
   --temperature 0.07 \
-  --crop-body False \
   --lr-adapter 5e-5 \
   --momentum 0.9 \
   --milestones 20 35 \
