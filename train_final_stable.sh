@@ -3,18 +3,18 @@ set -e
 
 # FINAL STABLE SCRIPT
 # This script uses the stable "probability fusion" method and disables AMP to prevent 'inf' loss.
-# It ensures all code files are synchronized to fix the size mismatch error.
+# All code files have been synchronized to fix the size mismatch error.
 
 # NOTE: Please replace the placeholder path for --resume-from.
-RESUME_CKPT="/kaggle/input/clip-caer-new-v1/CLIP-CAER-NEW-V1/model_best.pth"
+RESUME_CKPT="/PATH/TO/YOUR/model_best.pth"
 
 python main.py \
   --mode train \
   --resume-from "${RESUME_CKPT}" \
   --reset-epoch \
-  --exper-name final_stable_fusion \
+  --exper-name final_stable_fusion_run \
   --gpu 0 \
-  --epochs 10 \
+  --epochs 15 \
   --batch-size 8 \
   --optimizer AdamW \
   --lr 5e-5 \
@@ -30,12 +30,8 @@ python main.py \
   --val-annotation /kaggle/input/raer-annot/annotation/test.txt \
   --test-annotation /kaggle/input/raer-annot/annotation/test.txt \
   --clip-path ViT-B/32 \
-  --lambda_mi 0.03 \
-  --mi-warmup 2 \
-  --mi-ramp 5 \
-  --lambda_dc 0.05 \
-  --dc-warmup 2 \
-  --dc-ramp 5 \
+  --lambda_mi 0.0 \
+  --lambda_dc 0.0 \
   --grad-clip 1.0 \
   --seed 42 \
   --print-freq 10

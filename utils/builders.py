@@ -122,7 +122,7 @@ def build_dataloaders(args: argparse.Namespace) -> Tuple[torch.utils.data.DataLo
         with open(train_annotation_file_path, 'r') as f:
             for line in f:
                 try:
-                    label = int(line.strip().split()[2]) - 1
+                    label = int(line.strip().split()[2]) - 1 
                     if 0 <= label < len(class_weights):
                         sample_weights.append(class_weights[label])
                     else:

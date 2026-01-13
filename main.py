@@ -302,8 +302,7 @@ def run_training(args: argparse.Namespace) -> None:
         mi_warmup=args.mi_warmup, mi_ramp=args.mi_ramp,
         dc_warmup=args.dc_warmup, dc_ramp=args.dc_ramp,
         use_amp=args.use_amp, grad_clip=args.grad_clip,
-        two_head_loss=args.two_head_loss, w_bin=args.w_bin, w_4=args.w_4,
-        sweep_range=args.sweep_range, conf_recall_min=args.conf_recall_min
+        two_head_loss=args.two_head_loss, w_bin=args.w_bin, w_4=args.w_4
     )
 
     # Resume if requested

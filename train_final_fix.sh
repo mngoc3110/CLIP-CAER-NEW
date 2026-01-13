@@ -1,5 +1,6 @@
 #!/bin/bash
 #Phiên bản 1
+
 python main.py \
   --mode train \
   --exper-name final_LSR2_AdamW_Ensemble_baselineProtocol_SAFE \
@@ -8,7 +9,7 @@ python main.py \
   --batch-size 8 \
   --optimizer AdamW \
   --lr 1e-4 \
-  --lr-image-encoder 1e-6 \
+  --lr-image-encoder 1e-6 \ 
   --lr-prompt-learner 5e-4 \
   --lr-adapter 1e-4 \
   --weight-decay 0.0001 \

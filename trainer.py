@@ -45,13 +45,11 @@ class Trainer:
         self.log_txt_path = log_txt_path
         self.print_freq = 10
 
-        # Loss & Imbalance
         self.two_head_loss = two_head_loss
         self.w_aux_bin = w_bin
         self.w_aux_4 = w_4
         self.CONFUSION_ID = 2
 
-        # MI / DC
         self.mi_criterion = mi_criterion
         self.lambda_mi = float(lambda_mi) if lambda_mi is not None else 0.0
         self.dc_criterion = dc_criterion
@@ -61,7 +59,6 @@ class Trainer:
         self.dc_warmup = int(dc_warmup)
         self.dc_ramp = int(dc_ramp)
 
-        # Logit adjustment
         self.logit_adj_tau = float(logit_adj_tau)
         self.class_priors = None
         if class_priors is not None:
@@ -72,7 +69,6 @@ class Trainer:
                 class_priors = class_priors / (class_priors.sum() + 1e-12)
             self.class_priors = class_priors.view(1, -1)
 
-        # AMP
         self.use_amp = bool(use_amp)
         self.grad_clip = float(grad_clip)
         self.scaler = torch.cuda.amp.GradScaler() if self.use_amp else None
