@@ -15,7 +15,7 @@ python main.py \
   --gpu 0 \
   --epochs 30 \
   --batch-size 8 \
-  --optimizer SDG \
+  --optimizer AdamW \
   --lr 5e-5 \
   --lr-image-encoder 1e-6 \
   --lr-prompt-learner 1e-4 \
